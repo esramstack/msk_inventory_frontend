@@ -35,7 +35,7 @@ export default function ConfigPage() {
         }
 
         loadData();
-    }, [user]);
+    }, [user, router]);
 
     const loadData = async () => {
         try {

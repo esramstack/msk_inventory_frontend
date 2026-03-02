@@ -37,7 +37,7 @@ export default function AnalyticsPage() {
             }
         }
         load();
-    }, [user]);
+    }, [user, router]);
 
     if (loading || !user || user.role !== 'admin') return <div className="p-8 text-center text-[var(--text3)]">Loading analytics...</div>;
 

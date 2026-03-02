@@ -53,7 +53,7 @@ export default function UserManagement() {
             }
         }
         load();
-    }, [currentUser, dateFrom, dateTo]);
+    }, [currentUser, router, dateFrom, dateTo]);
 
     const handleAddUser = async () => {
         if (!newName || !newEmail || !newPass) return alert('Fill all fields');
