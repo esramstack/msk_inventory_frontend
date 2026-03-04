@@ -27,7 +27,7 @@ export default function Sidebar() {
         return (
             <div className="sidebar">
                 <div className="s-logo">
-                    <Image src="/msk-logo.png" alt="MSK Aesthetics By Dr. Salman" width={140} height={56} className="s-logo-img" priority />
+                    <Image src="/logo_black.png" alt="MSK Aesthetics By Dr. Salman" width={140} height={56} className="s-logo-img" priority />
                 </div>
                 <div style={{ padding: '20px 12px', color: 'var(--text3)', fontSize: '13px' }}>
                     Loading...
@@ -102,7 +102,7 @@ export default function Sidebar() {
     return (
         <div className="sidebar">
             <div className="s-logo">
-                <Image src="/msk-logo.png" alt="MSK Aesthetics By Dr. Salman" width={140} height={56} className="s-logo-img" priority />
+                <Image src="/logo_black.png" alt="MSK Aesthetics By Dr. Salman" width={140} height={56} className="s-logo-img" priority />
             </div>
 
             <div className="s-nav-wrap">
