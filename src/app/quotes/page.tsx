@@ -8,6 +8,8 @@ import { Quote, QuoteItem, Product, ConfigList } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
+const DEFAULT_BRANCH_ADDRESS = '2nd Floor, Spogmay Plaza, MSK Aesthetics, Univ road, Peshawar';
+
 export default function QuotesPage() {
     const { user } = useAuth();
     const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -30,6 +32,8 @@ export default function QuotesPage() {
     const [contact, setContact] = useState('');
     const [branch, setBranch] = useState('');
     const [address, setAddress] = useState('');
+    const [branchAddress, setBranchAddress] = useState(DEFAULT_BRANCH_ADDRESS);
+    const [createdBy, setCreatedBy] = useState('');
     const [discPct, setDiscPct] = useState(0);
     const [status, setStatus] = useState<'Draft' | 'Sent' | 'Accepted' | 'Rejected'>('Draft');
     const [notes, setNotes] = useState('');
@@ -62,6 +66,8 @@ export default function QuotesPage() {
 
         setRef(`QT-${Date.now().toString().slice(-5)}`);
         setClient(''); setContact(''); setBranch(''); setAddress('');
+        setBranchAddress(DEFAULT_BRANCH_ADDRESS);
+        setCreatedBy(user?.name || '');
         setDiscPct(0); setStatus('Draft'); setNotes('');
         setItems([{ id: Math.random().toString(), product_name: '', qty: 1, unit_price: 0 }]);
         setShowBuilder(true);
@@ -114,7 +120,7 @@ export default function QuotesPage() {
             await addQuote({
                 ref, date, valid_until: validUntil, client, contact, address, city: branch,
                 subtotal, disc_pct: discPct, disc_amt: discAmt, total, status, notes,
-                created_by: user ? user.name : 'Unknown'
+                created_by: createdBy || (user ? user.name : 'Unknown')
             }, dbItems);
 
             if (user) {
@@ -169,6 +175,7 @@ export default function QuotesPage() {
 
     // Printing logic
     const handlePreviewPDF = () => {
+        const logoUrl = typeof window !== 'undefined' ? `${window.location.origin}/logo_black.png` : '/logo_black.png';
         // Generate the HTML for the PDF representation based on the native CSS class structures.
         const itemsHtml = items.map(i => `
       <tr>
@@ -181,16 +188,18 @@ export default function QuotesPage() {
 
         const html = `
       <div class="inv-wrap">
-        <div class="inv-header">
-          <div>
-            <div class="inv-brand">MSK<span>Aesthetics</span></div>
-            <div class="inv-tagline">Premium Hair &amp; Skin Care Solutions</div>
-          </div>
-          <div class="inv-meta">
-            <strong>${status === 'Accepted' || status === 'Sent' ? 'INVOICE' : 'QUOTE'}</strong>
-            Ref: ${ref}<br>
-            Date: ${new Date(date).toLocaleDateString()}<br>
-            Created By: ${user?.name || ''}
+        <div class="inv-header-block">
+          <div class="inv-header">
+            <div>
+              <img src="${logoUrl}" class="inv-logo" alt="MSK Aesthetics" />
+            <!--   <div class="inv-tagline">Premium Hair &amp; Skin Care Solutions</div> -->
+            </div>
+            <div class="inv-meta">
+              <strong>${status === 'Accepted' || status === 'Sent' ? 'INVOICE' : 'QUOTE'}</strong>
+              Ref: ${ref}<br>
+              Date: ${new Date(date).toLocaleDateString()}<br>
+              Created By: ${createdBy || user?.name || ''}
+            </div>
           </div>
         </div>
         <hr class="inv-divider" />
@@ -200,17 +209,14 @@ export default function QuotesPage() {
             <div class="inv-party-name">${client || 'Client Name'}</div>
             <div class="inv-party-detail">
               ${contact ? `Contact: ${contact}<br>` : ''}
-              ${address ? `${address}<br>` : ''}
-              ${branch ? branch : ''}
+              ${address ? `${address}` : ''}
             </div>
           </div>
           <div>
             <div class="inv-party-label">From:</div>
             <div class="inv-party-name">MSK Aesthetics</div>
             <div class="inv-party-detail">
-              Ring Road, Peshawar, Pakistan<br>
-              info@mskaesthetics.com<br>
-              +92 333 1234567
+              ${branchAddress.replace(/\n/g, '<br>')}
             </div>
           </div>
         </div>
@@ -261,8 +267,14 @@ export default function QuotesPage() {
     const handleExportPDF = async () => {
         // dynamically load html2pdf
         const html2pdf = (await import('html2pdf.js')).default;
-        const element = document.createElement('div');
-        element.innerHTML = currentPrintHtml;
+        const wrapper = document.createElement('div');
+        wrapper.style.background = '#1a1d24';
+        wrapper.style.minHeight = '297mm';
+        wrapper.style.width = '210mm';
+        wrapper.style.margin = '0 auto';
+        wrapper.style.padding = '0';
+        wrapper.style.boxSizing = 'border-box';
+        wrapper.innerHTML = currentPrintHtml;
 
         // Inject the global styles via a style tag so html2pdf can see it
         const style = document.createElement('style');
@@ -276,7 +288,7 @@ export default function QuotesPage() {
                 // cross origin exception
             }
         }
-        element.appendChild(style);
+        wrapper.appendChild(style);
 
         const opt = {
             margin: 0,
@@ -286,7 +298,7 @@ export default function QuotesPage() {
             jsPDF: { unit: 'in' as const, format: 'a4', orientation: 'portrait' as const }
         };
 
-        html2pdf().from(element).set(opt).save();
+        html2pdf().from(wrapper).set(opt).save();
     };
 
     if (loading) return <div className="p-8">Loading quotes...</div>;
@@ -341,6 +353,8 @@ export default function QuotesPage() {
                                     </select>
                                 </div>
                                 <div className="fg" style={{ gridColumn: '1/-1' }}><label>Reseller Address (optional)</label><input type="text" placeholder="Shop/street address…" value={address} onChange={e => setAddress(e.target.value)} /></div>
+                                <div className="fg" style={{ gridColumn: '1/-1' }}><label>Branch Address (for invoice)</label><input type="text" placeholder="Branch address on invoice" value={branchAddress} onChange={e => setBranchAddress(e.target.value)} /></div>
+                                <div className="fg"><label>Created By (for invoice)</label><input type="text" placeholder="Name" value={createdBy} onChange={e => setCreatedBy(e.target.value)} /></div>
                             </div>
 
                             <div className="card-title" style={{ fontSize: '13px', marginBottom: '10px' }}>

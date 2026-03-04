@@ -22,16 +22,23 @@ export default function AddSale() {
     const [productName, setProductName] = useState('');
     const [qty, setQty] = useState(1);
     const [channel, setChannel] = useState('');
-    const [saleType, setSaleType] = useState('Full Price');
+    const [saleType, setSaleType] = useState<
+        '' | 'Full Price' | 'Percentage Discount' | 'Free / Complimentary'
+    >('');
     const [branch, setBranch] = useState('');
     const [platform, setPlatform] = useState('');
     const [customer, setCustomer] = useState('');
     const [unitPrice, setUnitPrice] = useState(0);
-    const [discPct, setDiscPct] = useState(0);
-    const [status, setStatus] = useState<'Paid' | 'Pending' | 'Free'>('Paid');
+    const [discPct, setDiscPct] = useState<string>('');
+    const [status, setStatus] = useState<'Paid' | 'Pending' | 'Free' | ''>('');
     const [notes, setNotes] = useState('');
 
     const [saving, setSaving] = useState(false);
+
+    const generateOrderRef = () => {
+        const ts = Date.now().toString().slice(-5);
+        return `ORD-${ts}`;
+    };
 
     useEffect(() => {
         async function load() {
@@ -46,6 +53,8 @@ export default function AddSale() {
             }
         }
         load();
+        // Seed a reference number by default, but keep it editable
+        setRef(prev => prev || generateOrderRef());
     }, []);
 
     const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -60,16 +69,28 @@ export default function AddSale() {
     const calcVars = () => {
         const price = unitPrice || 0;
         const quantity = qty || 1;
-        const pct = discPct || 0;
-        const discAmt = Math.round(price * quantity * pct);
-        const final = Math.round(price * quantity * (1 - pct));
-        return { discAmt, final };
+        const pctNum = discPct ? parseFloat(discPct) || 0 : 0;
+        const discAmt = Math.round(price * quantity * pctNum);
+        const final = Math.round(price * quantity * (1 - pctNum));
+        return { discAmt, final, pctNum };
     };
 
-    const { discAmt, final } = calcVars();
+    const { discAmt, final, pctNum } = calcVars();
 
     const handleSave = async () => {
-        if (!productName || !date || !ref || !channel || !branch || !platform || !customer || qty < 1) {
+        if (
+            !productName ||
+            !date ||
+            !ref ||
+            !channel ||
+            !saleType ||
+            !branch ||
+            !platform ||
+            !customer ||
+            !status ||
+            discPct === '' ||
+            qty < 1
+        ) {
             alert('Please fill out all mandatory fields.');
             return;
         }
@@ -77,8 +98,12 @@ export default function AddSale() {
         setSaving(true);
         try {
             const generatedRef = ref;
-            const activeDisc = getDiscounts().find(d => d.pct === discPct);
-            const discLabel = activeDisc ? activeDisc.value : `${discPct * 100}%`;
+            const activeDisc = getDiscounts().find(
+                d => String(d.pct ?? 0) === discPct
+            );
+            const discLabel = activeDisc
+                ? activeDisc.value
+                : `${(pctNum * 100).toFixed(0)}%`;
 
             const newSale: Omit<Sale, 'id' | 'created_at' | 'is_deleted' | 'deleted_at' | 'deleted_by'> = {
                 date,
@@ -92,7 +117,7 @@ export default function AddSale() {
                 customer,
                 unit_price: unitPrice,
                 disc_label: discLabel,
-                disc_pct: discPct,
+                disc_pct: pctNum,
                 disc_amt: discAmt,
                 final_price: final,
                 status,
@@ -162,10 +187,11 @@ export default function AddSale() {
 
                     <div className="fg">
                         <label>Sale Type*</label>
-                        <select required value={saleType} onChange={e => setSaleType(e.target.value)}>
-                            <option>Full Price</option>
-                            <option>Percentage Discount</option>
-                            <option>Free / Complimentary</option>
+                        <select required value={saleType} onChange={e => setSaleType(e.target.value as any)}>
+                            <option value="">Select sale type…</option>
+                            <option value="Full Price">Full Price</option>
+                            <option value="Percentage Discount">Percentage Discount</option>
+                            <option value="Free / Complimentary">Free / Complimentary</option>
                         </select>
                     </div>
 
@@ -190,14 +216,28 @@ export default function AddSale() {
 
                     <div className="fg">
                         <label>Discount %*</label>
-                        <select required value={discPct} onChange={e => setDiscPct(parseFloat(e.target.value) || 0)}>
-                            {getDiscounts().map(d => <option key={d.id} value={d.pct || 0}>{d.value}</option>)}
+                        <select
+                            required
+                            value={discPct}
+                            onChange={e => setDiscPct(e.target.value)}
+                        >
+                            <option value="">Select discount…</option>
+                            {getDiscounts().map(d => (
+                                <option key={d.id} value={String(d.pct ?? 0)}>
+                                    {d.value}
+                                </option>
+                            ))}
                         </select>
                     </div>
 
                     <div className="fg">
                         <label>Payment Status*</label>
-                        <select required value={status} onChange={e => setStatus(e.target.value as any)}>
+                        <select
+                            required
+                            value={status}
+                            onChange={e => setStatus(e.target.value as any)}
+                        >
+                            <option value="">Select status…</option>
                             <option value="Paid">Paid</option>
                             <option value="Pending">Pending</option>
                             <option value="Free">Free</option>
