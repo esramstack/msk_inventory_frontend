@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { Eye, EyeOff, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { BACKEND_URL } from '@/lib/config';
@@ -59,7 +60,13 @@ export default function Login() {
                 <div className="o3 orb"></div>
 
                 <div className="auth-brand relative z-[2]">
-                    <div className="auth-logo">MSK<em>Aesthetics</em></div>
+                    <Image
+                        src="/logo_black.png"
+                        alt="MSK Aesthetics By Dr. Salman"
+                        width={220}
+                        height={180}
+                        priority
+                    />
                     <div className="auth-tagline">MSK Aesthetics Inventory Management — precision in every unit.</div>
                 </div>
 
