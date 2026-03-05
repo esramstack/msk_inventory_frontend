@@ -171,8 +171,8 @@ export default function UserManagement() {
 
             {/* Modals Inlined for simplicity as per project style */}
             {showAdd && (
-                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div className="card" style={{ width: '400px', margin: 0 }}>
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                    <div className="card modal-card">
                         <div className="card-title">Create New Profile</div>
                         <div className="fg"><label>Full Name</label><input type="text" value={newName} onChange={e => setNewName(e.target.value)} /></div>
                         <div className="fg"><label>Email Address</label><input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} /></div>
@@ -193,8 +193,8 @@ export default function UserManagement() {
             )}
 
             {editingUserId && (
-                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div className="card" style={{ width: '400px', margin: 0 }}>
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                    <div className="card modal-card">
                         <div className="card-title">Update Password</div>
                         <div className="fg"><label>New Security Password</label><input type="password" value={changePass} onChange={e => setChangePass(e.target.value)} /></div>
                         <div className="btn-row" style={{ marginTop: '20px' }}>
@@ -221,10 +221,10 @@ export default function UserManagement() {
             <div className="card">
                 <div className="card-title">Detailed Activity Audit</div>
 
-                <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', padding: '15px', background: 'var(--surface2)', borderRadius: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ flex: '1 1 200px' }}>
+                <div className="users-filter-bar" style={{ display: 'flex', gap: '15px', marginBottom: '20px', padding: '15px', background: 'var(--surface2)', borderRadius: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div className="users-filter-daterange" style={{ flex: '1 1 200px' }}>
                         <label style={{ display: 'block', fontSize: '11px', color: 'var(--text3)', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date Range</label>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div className="users-filter-daterange-inner" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <input type="date" className="dfinput" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', padding: '8px', borderRadius: '6px', color: 'var(--text)' }} />
                             <span style={{ color: 'var(--text3)' }}>to</span>
                             <input type="date" className="dfinput" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', padding: '8px', borderRadius: '6px', color: 'var(--text)' }} />
@@ -254,7 +254,7 @@ export default function UserManagement() {
                     <button className="btn btn-secondary" onClick={() => { setDateFrom(''); setDateTo(''); setSelectedUser('all'); setSelectedType('all'); }} style={{ height: '38px', whiteSpace: 'nowrap' }}>RESET FILTERS</button>
                 </div>
 
-                <div className="table-wrap">
+                <div className="tbl-wrap">
                     <table>
                         <thead>
                             <tr>

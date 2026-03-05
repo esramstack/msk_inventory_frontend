@@ -152,7 +152,10 @@ export default function QuotesPage() {
         }
     };
 
+    const isAdmin = user?.role === 'admin';
+
     const handleDelete = (id: string, qRef: string) => {
+        if (!isAdmin) return;
         setPendingDeleteId(id);
         setPendingDeleteRef(qRef);
     };
@@ -175,7 +178,7 @@ export default function QuotesPage() {
 
     // Printing logic
     const handlePreviewPDF = () => {
-        const logoUrl = typeof window !== 'undefined' ? `${window.location.origin}/logo_black.png` : '/logo_black.png';
+        const logoUrl = typeof window !== 'undefined' ? `${window.location.origin}/msk-logo.png` : '/msk-logo.png';
         // Generate the HTML for the PDF representation based on the native CSS class structures.
         const itemsHtml = items.map(i => `
       <tr>
@@ -268,7 +271,7 @@ export default function QuotesPage() {
         // dynamically load html2pdf
         const html2pdf = (await import('html2pdf.js')).default;
         const wrapper = document.createElement('div');
-        wrapper.style.background = '#1a1d24';
+        wrapper.style.background = '#ffffff';
         wrapper.style.minHeight = '297mm';
         wrapper.style.width = '210mm';
         wrapper.style.margin = '0 auto';
@@ -364,25 +367,26 @@ export default function QuotesPage() {
                                 </span>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 110px 38px', gap: '8px', padding: '0 0 6px', borderBottom: '1px solid var(--border)', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Product</span>
-                                <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Qty</span>
-                                <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Unit Price</span>
-                                <span></span>
-                            </div>
-
-                            {items.map((it, idx) => (
-                                <div className="qi-row" key={it.id}>
-                                    <select value={it.product_name} onChange={e => handleProductSelect(idx, e.target.value)}>
-                                        <option value="">Select product...</option>
-                                        {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                                    </select>
-                                    <input type="number" min="1" value={it.qty} onChange={e => updateItemQty(idx, parseInt(e.target.value) || 1)} />
-                                    <input type="number" min="0" value={it.unit_price} onChange={e => updateItemPrice(idx, parseFloat(e.target.value) || 0)} />
-                                    <button className="qi-del-btn" onClick={() => removeItem(idx)}>✕</button>
+                            <div className="qi-table-wrap">
+                                <div className="qi-row-header">
+                                    <span>Product</span>
+                                    <span>Qty</span>
+                                    <span>Unit Price</span>
+                                    <span></span>
                                 </div>
-                            ))}
-                            <button className="btn btn-secondary btn-sm mt-[4px]" onClick={() => setItems([...items, { id: Math.random().toString(), product_name: '', qty: 1, unit_price: 0 }])}>+ Add Item</button>
+                                {items.map((it, idx) => (
+                                    <div className="qi-row" key={it.id}>
+                                        <select value={it.product_name} onChange={e => handleProductSelect(idx, e.target.value)}>
+                                            <option value="">Select product...</option>
+                                            {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                                        </select>
+                                        <input type="number" min="1" value={it.qty} onChange={e => updateItemQty(idx, parseInt(e.target.value) || 1)} />
+                                        <input type="number" min="0" value={it.unit_price} onChange={e => updateItemPrice(idx, parseFloat(e.target.value) || 0)} />
+                                        <button className="qi-del-btn" onClick={() => removeItem(idx)}>✕</button>
+                                    </div>
+                                ))}
+                                <button className="btn btn-secondary btn-sm mt-[4px]" onClick={() => setItems([...items, { id: Math.random().toString(), product_name: '', qty: 1, unit_price: 0 }])}>+ Add Item</button>
+                            </div>
 
                             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', marginTop: '20px' }}>
                                 <div className="fg">
@@ -403,7 +407,7 @@ export default function QuotesPage() {
                         </div>
 
                         <div>
-                            <div className="card" style={{ position: 'sticky', top: '20px', marginBottom: 0 }}>
+                            <div className="card quote-summary-card">
                                 <div className="card-title" style={{ fontSize: '13px' }}>Live Summary</div>
                                 <div className="quote-total-box">
                                     <div className="row"><span>Subtotal</span><span className="val">{pkr(subtotal)}</span></div>
@@ -463,7 +467,9 @@ export default function QuotesPage() {
                                         >
                                             <option>Draft</option><option>Sent</option><option>Accepted</option><option>Rejected</option>
                                         </select>
-                                        <button className="btn btn-danger btn-sm ml-2" onClick={() => handleDelete(q.id!, q.ref)}>✕</button>
+                                        {isAdmin && (
+                                            <button className="btn btn-danger btn-sm ml-2" onClick={() => handleDelete(q.id!, q.ref)}>✕</button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

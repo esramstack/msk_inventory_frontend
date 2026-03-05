@@ -30,8 +30,10 @@ export default function SalesLog() {
         loadData();
     }, []);
 
+    const isAdmin = user?.role === 'admin';
+
     const handleDelete = (sale: Sale) => {
-        if (!user) return;
+        if (!user || !isAdmin) return;
         setPendingDelete(sale);
     };
 
@@ -67,7 +69,7 @@ export default function SalesLog() {
 
     // --- Export Logic ---
     const exportCSV = () => {
-        const headers = ["Date", "Ref", "Product", "Qty", "Channel", "Customer", "Branch", "Total", "Discount", "Final", "Status", "Notes"];
+        const headers = ["Date", "Ref", "Product", "Qty", "Channel", "Customer", "Branch", "Payment", "Total", "Discount", "Final", "Status", "Notes"];
         const rows = filteredSales.map(s => [
             s.date,
             s.ref,
@@ -76,6 +78,7 @@ export default function SalesLog() {
             s.channel,
             s.customer || '',
             s.city || '',
+            s.payment_type || '',
             (s.unit_price * s.qty).toFixed(0),
             s.disc_label || '0%',
             s.final_price.toFixed(0),
@@ -159,9 +162,10 @@ export default function SalesLog() {
                                 <th>Product</th>
                                 <th>Qty</th>
                                 <th>Channel</th>
-                                <th>Customer</th>
-                                <th>Branch</th>
-                                <th>Total</th>
+<th>Customer</th>
+                                    <th>Branch</th>
+                                    <th>Payment</th>
+                                    <th>Total</th>
                                 <th>Discount</th>
                                 <th>Final Price</th>
                                 <th>Status</th>
@@ -179,18 +183,21 @@ export default function SalesLog() {
                                     <td><span className="badge b-gray" style={{ fontSize: '11px' }}>{s.channel}</span></td>
                                     <td className="muted">{s.customer || '—'}</td>
                                     <td className="muted">{s.city || '—'}</td>
+                                    <td className="muted">{s.payment_type || '—'}</td>
                                     <td className="mono">{pkr(s.unit_price * s.qty)}</td>
                                     <td className="mono" style={{ color: 'var(--amber)' }}>{s.disc_label || '0%'}</td>
                                     <td style={{ fontWeight: 600, color: 'var(--gold)', fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace" }}>{pkr(s.final_price)}</td>
                                     <td>{statusBadge(s.status)}</td>
                                     <td className="muted">{s.notes || '—'}</td>
                                     <td className="no-export">
-                                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s)}>✕</button>
+                                        {isAdmin && (
+                                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s)}>✕</button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
                             {filteredSales.length === 0 && (
-                                <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text3)', padding: '32px' }}>No sales found</td></tr>
+                                <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text3)', padding: '32px' }}>No sales found</td></tr>
                             )}
                         </tbody>
                     </table>

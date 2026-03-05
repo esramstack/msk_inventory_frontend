@@ -28,6 +28,7 @@ export default function AddSale() {
     const [branch, setBranch] = useState('');
     const [platform, setPlatform] = useState('');
     const [customer, setCustomer] = useState('');
+    const [paymentType, setPaymentType] = useState<'Cash' | 'Bank Transfer' | 'Debit/Credit Card' | ''>('');
     const [unitPrice, setUnitPrice] = useState(0);
     const [discPct, setDiscPct] = useState<string>('');
     const [status, setStatus] = useState<'Paid' | 'Pending' | 'Free' | ''>('');
@@ -87,6 +88,7 @@ export default function AddSale() {
             !branch ||
             !platform ||
             !customer ||
+            !paymentType ||
             !status ||
             discPct === '' ||
             qty < 1
@@ -115,6 +117,7 @@ export default function AddSale() {
                 city: branch,
                 platform,
                 customer,
+                payment_type: paymentType,
                 unit_price: unitPrice,
                 disc_label: discLabel,
                 disc_pct: pctNum,
@@ -212,6 +215,15 @@ export default function AddSale() {
                     </div>
 
                     <div className="fg"><label>Customer / Recipient*</label><input type="text" required placeholder="Name or handle" value={customer} onChange={e => setCustomer(e.target.value)} /></div>
+                    <div className="fg">
+                        <label>Payment Type*</label>
+                        <select required value={paymentType} onChange={e => setPaymentType(e.target.value as any)}>
+                            <option value="">Select payment type…</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="Debit/Credit Card">Debit/Credit Card</option>
+                        </select>
+                    </div>
                     <div className="fg"><label>Unit Price (PKR)*</label><input type="number" required value={unitPrice} onChange={e => setUnitPrice(parseFloat(e.target.value) || 0)} /></div>
 
                     <div className="fg">

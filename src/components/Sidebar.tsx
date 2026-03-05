@@ -18,14 +18,19 @@ import {
     FileText
 } from 'lucide-react';
 
-export default function Sidebar() {
+interface SidebarProps {
+    mobileOpen?: boolean;
+    onClose?: () => void;
+}
+
+export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     const { user, loading, refreshAuth } = useAuth();
     const pathname = usePathname();
     const router = useRouter();
 
     if (loading) {
         return (
-            <div className="sidebar">
+            <div className={`sidebar ${mobileOpen ? 'sidebar--open' : ''}`}>
                 <div className="s-logo">
                     <Image src="/logo_black.png" alt="MSK Aesthetics By Dr. Salman" width={140} height={56} className="s-logo-img" priority />
                 </div>
@@ -87,6 +92,7 @@ export default function Sidebar() {
                 href={path}
                 key={path}
                 className={`nav ${isActive ? 'active' : ''}`}
+                onClick={() => onClose?.()}
             >
                 {icon}
                 {label}
@@ -100,7 +106,7 @@ export default function Sidebar() {
     };
 
     return (
-        <div className="sidebar">
+        <div className={`sidebar ${mobileOpen ? 'sidebar--open' : ''}`}>
             <div className="s-logo">
                 <Image src="/logo_black.png" alt="MSK Aesthetics By Dr. Salman" width={140} height={56} className="s-logo-img" priority />
             </div>

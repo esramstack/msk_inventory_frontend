@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { getProducts, getConfigLists } from '@/api/inventory';
-import { getRestocks, addRestock } from '@/api/sales';
+import { getRestocks, addRestock, deleteRestock } from '@/api/sales';
 import { addActivityLog } from '@/api/quotes';
 import { Product, Restock } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function RestockPage() {
     const { user } = useAuth();
@@ -13,6 +14,8 @@ export default function RestockPage() {
     const [restocks, setRestocks] = useState<Restock[]>([]);
     const [branches, setBranches] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
+    const [pendingDelete, setPendingDelete] = useState<Restock | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Form State
     const [productName, setProductName] = useState('');
@@ -68,6 +71,28 @@ export default function RestockPage() {
         }
     };
 
+    const isAdmin = user?.role === 'admin';
+
+    const handleDelete = (r: Restock) => {
+        if (!user || !isAdmin) return;
+        setPendingDelete(r);
+    };
+
+    const confirmDelete = async () => {
+        if (!user || !pendingDelete || !pendingDelete.id) return;
+        setDeleting(true);
+        try {
+            await deleteRestock(pendingDelete.id);
+            await loadData();
+            setPendingDelete(null);
+        } catch (e) {
+            console.error(e);
+            alert('Failed to delete restock record.');
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     if (loading) return <div className="page active"><div className="ph"><div><h1>Restock</h1></div></div><div style={{ color: 'var(--text3)', padding: '32px', textAlign: 'center' }}>Loading...</div></div>;
 
     return (
@@ -79,7 +104,7 @@ export default function RestockPage() {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '18px', alignItems: 'start' }}>
+            <div className="restock-layout" style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '18px', alignItems: 'start' }}>
 
                 {/* ADD STOCK FORM */}
                 <div className="card">
@@ -136,6 +161,7 @@ export default function RestockPage() {
                                     <th>Units Added</th>
                                     <th>Supplier</th>
                                     <th>Notes</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -147,10 +173,15 @@ export default function RestockPage() {
                                         <td style={{ color: 'var(--green)', fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace", fontWeight: 700 }}>+{r.qty}</td>
                                         <td className="muted">{r.supplier || '—'}</td>
                                         <td className="muted">{r.notes || '—'}</td>
+                                        <td>
+                                            {isAdmin && (
+                                                <button type="button" className="btn btn-danger btn-sm" onClick={() => handleDelete(r)} title="Delete restock">✕</button>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))}
                                 {restocks.length === 0 && (
-                                    <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text3)', padding: '28px' }}>No restock entries yet</td></tr>
+                                    <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text3)', padding: '28px' }}>No restock entries yet</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -158,6 +189,22 @@ export default function RestockPage() {
                 </div>
 
             </div>
+
+            <ConfirmDialog
+                open={!!pendingDelete}
+                title="Delete restock record"
+                message={pendingDelete ? (
+                    <>
+                        You are about to delete the restock record: <strong>{pendingDelete.product_name}</strong>, +{pendingDelete.qty} units
+                        {pendingDelete.city ? ` at ${pendingDelete.city}` : ''} ({pendingDelete.date}). This cannot be undone.
+                    </>
+                ) : null}
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                confirming={deleting}
+                onConfirm={confirmDelete}
+                onCancel={() => !deleting && setPendingDelete(null)}
+            />
         </div>
     );
 }

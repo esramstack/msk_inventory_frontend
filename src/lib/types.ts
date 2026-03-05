@@ -47,6 +47,7 @@ export interface Sale {
     city: string;
     platform: string;
     customer: string;
+    payment_type?: string;
     unit_price: number;
     disc_label: string;
     disc_pct: number;

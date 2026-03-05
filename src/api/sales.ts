@@ -33,3 +33,7 @@ export async function addRestock(restock: Omit<Restock, 'id' | 'created_at'>) {
     const { data } = await apiClient.post<Restock>('/sales/restocks', restock);
     return data;
 }
+
+export async function deleteRestock(id: string) {
+    await apiClient.delete(`/sales/restocks/${id}`);
+}
