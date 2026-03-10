@@ -12,6 +12,8 @@ export default function SalesLog() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [branchFilter, setBranchFilter] = useState('');
+    const [productFilter, setProductFilter] = useState('');
     const [pendingDelete, setPendingDelete] = useState<Sale | null>(null);
     const [deleting, setDeleting] = useState(false);
 
@@ -57,8 +59,13 @@ export default function SalesLog() {
             .toLowerCase()
             .includes(searchTerm.toLowerCase());
         const matchesStatus = !statusFilter || s.status === statusFilter;
-        return matchesSearch && matchesStatus;
+        const matchesBranch = !branchFilter || s.city === branchFilter;
+        const matchesProduct = !productFilter || s.product_name === productFilter;
+        return matchesSearch && matchesStatus && matchesBranch && matchesProduct;
     });
+
+    const branchOptions = Array.from(new Set(sales.map(s => s.city).filter(Boolean))) as string[];
+    const productOptions = Array.from(new Set(sales.map(s => s.product_name).filter(Boolean))) as string[];
 
     const pkr = (v: number) => 'PKR ' + Number(Math.round(v)).toLocaleString();
     const statusBadge = (s: string) => {
@@ -150,6 +157,18 @@ export default function SalesLog() {
                         <option value="Paid">Paid</option>
                         <option value="Pending">Pending</option>
                         <option value="Free">Free / Gift</option>
+                    </select>
+                    <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}>
+                        <option value="">All branches</option>
+                        {branchOptions.map(b => (
+                            <option key={b} value={b}>{b}</option>
+                        ))}
+                    </select>
+                    <select value={productFilter} onChange={e => setProductFilter(e.target.value)}>
+                        <option value="">All products</option>
+                        {productOptions.map(p => (
+                            <option key={p} value={p}>{p}</option>
+                        ))}
                     </select>
                 </div>
 

@@ -122,16 +122,26 @@ export default function StockLevels() {
             );
 
             const products: BranchProductRow[] = productNames.map(prod => {
-                const sold = branchSales
-                    .filter(s => s.product_name === prod)
-                    .reduce((a, s) => a + s.qty, 0);
-                const restocked = branchRestocks
-                    .filter(r => r.product_name === prod)
-                    .reduce((a, r) => a + r.qty, 0);
-                const current = restocked - sold;
-                const healthPct = restocked > 0 ? Math.max(0, Math.min(1, current / restocked)) : 0;
+                const prodSales = branchSales
+                    .filter(s => s.product_name === prod);
+                const prodRestocks = branchRestocks
+                    .filter(r => r.product_name === prod);
+
+                const sold = prodSales.reduce((a, s) => a + s.qty, 0);
+                const allRestocked = prodRestocks.reduce((a, r) => a + r.qty, 0);
+
+                // Treat any branch-level "Initial Stock" as opening stock for that branch
+                const initialEntry = prodRestocks.find(r => r.supplier === 'Initial Stock');
+                const opening = initialEntry ? initialEntry.qty : 0;
+
+                // "Restocked" here follows the overview semantics = movements after opening
+                const restocked = allRestocked - opening;
+                const current = opening + restocked - sold;
+                const total = opening + restocked;
+
+                const healthPct = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
                 return { product: prod, restocked, sold, current, healthPct };
-            }).filter(p => p.restocked > 0 || p.sold > 0);
+            }).filter(p => p.restocked > 0 || p.sold > 0 || p.current > 0);
 
             const totalCurrent = products.reduce((a, p) => a + p.current, 0);
 
@@ -190,7 +200,7 @@ export default function StockLevels() {
                                         <th>Current</th>
                                         <th>Reorder At</th>
                                         <th style={{ minWidth: '100px' }}>Stock %</th>
-                                        <th>Est. Days Left</th>
+                                        {/* <th>Est. Days Left</th> */}
                                         <th>Status</th>
                                     </tr>
                                 </thead>
@@ -222,12 +232,12 @@ export default function StockLevels() {
                                                     </span>
                                                 </div>
                                             </td>
-                                            <td className="mono">{r.daysLeft}</td>
+                                            {/* <td className="mono">{r.daysLeft}</td> */}
                                             <td><StockBadge cur={r.current} reorder={r.reorder} /></td>
                                         </tr>
                                     ))}
                                     {stockRows.length === 0 && (
-                                        <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text3)', padding: '28px' }}>No products configured</td></tr>
+                                        <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text3)', padding: '28px' }}>No products configured</td></tr>
                                     )}
                                 </tbody>
                             </table>

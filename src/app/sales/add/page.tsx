@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getProducts, getConfigLists } from '@/api/inventory';
-import { addSale } from '@/api/sales';
+import { addSale, getSales, getRestocks } from '@/api/sales';
 import { addActivityLog } from '@/api/quotes';
-import { Product, ConfigList, Sale } from '@/lib/types';
+import { Product, ConfigList, Sale, Restock } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function AddSale() {
     const { user } = useAuth();
@@ -15,6 +16,11 @@ export default function AddSale() {
     const [products, setProducts] = useState<Product[]>([]);
     const [configs, setConfigs] = useState<ConfigList[]>([]);
     const [loading, setLoading] = useState(true);
+    const [sales, setSales] = useState<Sale[]>([]);
+    const [restocks, setRestocks] = useState<Restock[]>([]);
+    const [errorOpen, setErrorOpen] = useState(false);
+    const [errorTitle, setErrorTitle] = useState('');
+    const [errorMessage, setErrorMessage] = useState<React.ReactNode>('');
 
     // Form State
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -44,9 +50,16 @@ export default function AddSale() {
     useEffect(() => {
         async function load() {
             try {
-                const [p, c] = await Promise.all([getProducts(), getConfigLists()]);
+                const [p, c, s, r] = await Promise.all([
+                    getProducts(),
+                    getConfigLists(),
+                    getSales(),
+                    getRestocks()
+                ]);
                 setProducts(p);
                 setConfigs(c);
+                setSales(s);
+                setRestocks(r);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -78,6 +91,47 @@ export default function AddSale() {
 
     const { discAmt, final, pctNum } = calcVars();
 
+    const getBranchAvailable = (prodName: string, branchName: string) => {
+        if (!prodName || !branchName) return 0;
+
+        const prodSales = sales.filter(
+            s => s.product_name === prodName && s.city === branchName
+        );
+        const prodRestocks = restocks.filter(
+            r => r.product_name === prodName && r.city === branchName
+        );
+
+        const sold = prodSales.reduce((a, s) => a + s.qty, 0);
+        const allRestocked = prodRestocks.reduce((a, r) => a + r.qty, 0);
+
+        const initialEntry = prodRestocks.find(r => r.supplier === 'Initial Stock');
+        const opening = initialEntry ? initialEntry.qty : 0;
+
+        const restocked = allRestocked - opening;
+        const current = opening + restocked - sold;
+
+        return Math.max(0, current);
+    };
+
+    const getGlobalAvailable = (prodName: string) => {
+        if (!prodName) return 0;
+
+        const prodSales = sales.filter(s => s.product_name === prodName);
+        const prodRestocks = restocks.filter(r => r.product_name === prodName);
+
+        const sold = prodSales.reduce((a, s) => a + s.qty, 0);
+        const allRestocked = prodRestocks.reduce((a, r) => a + r.qty, 0);
+
+        const current = allRestocked - sold;
+        return Math.max(0, current);
+    };
+
+    const showError = (title: string, message: React.ReactNode) => {
+        setErrorTitle(title);
+        setErrorMessage(message);
+        setErrorOpen(true);
+    };
+
     const handleSave = async () => {
         if (
             !productName ||
@@ -93,7 +147,35 @@ export default function AddSale() {
             discPct === '' ||
             qty < 1
         ) {
-            alert('Please fill out all mandatory fields.');
+            showError('Missing information', 'Please fill out all mandatory fields.');
+            return;
+        }
+
+        // ── Stock checks ─────────────────────────────────────────────
+        const branchAvailable = getBranchAvailable(productName, branch);
+        const globalAvailable = getGlobalAvailable(productName);
+
+        if (globalAvailable <= 0) {
+            showError(
+                'Out of stock',
+                `No stock available for ${productName}. Please restock before recording a sale.`
+            );
+            return;
+        }
+
+        if (branchAvailable <= 0) {
+            showError(
+                'Out of stock at branch',
+                `No stock available for ${productName} at ${branch}. Please select another branch or restock this branch.`
+            );
+            return;
+        }
+
+        if (qty > branchAvailable) {
+            showError(
+                'Quantity exceeds available stock',
+                `Only ${branchAvailable} unit(s) available for ${productName} at ${branch}. Please reduce the quantity.`
+            );
             return;
         }
 
@@ -141,7 +223,7 @@ export default function AddSale() {
             router.push('/sales');
         } catch (e) {
             console.error(e);
-            alert('Failed to save sale.');
+            showError('Error', 'Failed to save sale.');
         } finally {
             setSaving(false);
         }
@@ -273,6 +355,17 @@ export default function AddSale() {
                     <button className="btn btn-secondary" onClick={() => router.push('/sales')}>Cancel</button>
                 </div>
             </div>
+
+            <ConfirmDialog
+                open={errorOpen}
+                title={errorTitle}
+                message={errorMessage}
+                confirmLabel="OK"
+                cancelLabel="Close"
+                confirming={false}
+                onConfirm={() => setErrorOpen(false)}
+                onCancel={() => setErrorOpen(false)}
+            />
         </div>
     );
 }
