@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { getProducts } from '@/api/inventory';
-import { getSales, getRestocks } from '@/api/sales';
-import { Product, Sale, Restock } from '@/lib/types';
+import { getSales, getRestocks, SaleLineRow } from '@/api/sales';
+import { Product, Restock } from '@/lib/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface StockRow {
@@ -52,7 +52,7 @@ const StockBadge = ({ cur, reorder }: { cur: number; reorder: number }) => {
 export default function StockLevels() {
     const [stockRows, setStockRows] = useState<StockRow[]>([]);
     const [branchData, setBranchData] = useState<BranchData[]>([]);
-    const [sales, setSales] = useState<Sale[]>([]);
+    const [sales, setSales] = useState<SaleLineRow[]>([]);
     const [restocks, setRestocks] = useState<Restock[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'overview' | 'branch'>('overview');
@@ -72,7 +72,7 @@ export default function StockLevels() {
                 const daysSince = Math.max(1, Math.round((new Date().getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
 
                 const rows: StockRow[] = products.map(p => {
-                    const sold = salesData.filter(s => s.product_name === p.name).reduce((sum, s) => sum + s.qty, 0);
+                    const sold = salesData.filter(r => r.product_name === p.name).reduce((sum, r) => sum + r.qty, 0);
                     const allRestocked = restockData.filter(r => r.product_name === p.name).reduce((sum, r) => sum + r.qty, 0);
                     const initialEntry = restockData.find(r => r.product_name === p.name && r.supplier === 'Initial Stock');
                     const opening = initialEntry ? initialEntry.qty : 0;
@@ -98,32 +98,32 @@ export default function StockLevels() {
         loadData();
     }, []);
 
-    function buildBranchData(salesData: Sale[], restockData: Restock[]) {
+    function buildBranchData(salesData: SaleLineRow[], restockData: Restock[]) {
         // Branch names where either a sale or restock has a city/branch recorded
         const branchNames = Array.from(
             new Set(
                 [
-                    ...salesData.map(s => s.city).filter(Boolean),
+                    ...salesData.map(r => r.sales.city).filter(Boolean),
                     ...restockData.map(r => r.city).filter(Boolean),
                 ] as string[]
             )
         );
 
         const data: BranchData[] = branchNames.map(name => {
-            const branchSales = salesData.filter(s => s.city === name);
+            const branchSales = salesData.filter(r => r.sales.city === name);
             const branchRestocks = restockData.filter(r => r.city === name);
 
             // All products that ever moved in this branch
             const productNames = Array.from(
                 new Set([
-                    ...branchSales.map(s => s.product_name),
+                    ...branchSales.map(r => r.product_name),
                     ...branchRestocks.map(r => r.product_name),
                 ])
             );
 
             const products: BranchProductRow[] = productNames.map(prod => {
                 const prodSales = branchSales
-                    .filter(s => s.product_name === prod);
+                    .filter(r => r.product_name === prod);
                 const prodRestocks = branchRestocks
                     .filter(r => r.product_name === prod);
 

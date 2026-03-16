@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getProducts, getConfigLists } from '@/api/inventory';
-import { addSale, getSales, getRestocks } from '@/api/sales';
+import { addSale, getSales, getRestocks, CreateSalePayload, SaleLineRow } from '@/api/sales';
 import { addActivityLog } from '@/api/quotes';
-import { Product, ConfigList, Sale, Restock } from '@/lib/types';
+import { Product, ConfigList, Restock } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
@@ -16,17 +16,15 @@ export default function AddSale() {
     const [products, setProducts] = useState<Product[]>([]);
     const [configs, setConfigs] = useState<ConfigList[]>([]);
     const [loading, setLoading] = useState(true);
-    const [sales, setSales] = useState<Sale[]>([]);
+    const [sales, setSales] = useState<SaleLineRow[]>([]);
     const [restocks, setRestocks] = useState<Restock[]>([]);
     const [errorOpen, setErrorOpen] = useState(false);
     const [errorTitle, setErrorTitle] = useState('');
     const [errorMessage, setErrorMessage] = useState<React.ReactNode>('');
 
-    // Form State
+    // Header / shared form state
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
     const [ref, setRef] = useState('');
-    const [productName, setProductName] = useState('');
-    const [qty, setQty] = useState(1);
     const [channel, setChannel] = useState('');
     const [saleType, setSaleType] = useState<
         '' | 'Full Price' | 'Percentage Discount' | 'Free / Complimentary'
@@ -35,10 +33,30 @@ export default function AddSale() {
     const [platform, setPlatform] = useState('');
     const [customer, setCustomer] = useState('');
     const [paymentType, setPaymentType] = useState<'Cash' | 'Bank Transfer' | 'Debit/Credit Card' | ''>('');
-    const [unitPrice, setUnitPrice] = useState(0);
-    const [discPct, setDiscPct] = useState<string>('');
     const [status, setStatus] = useState<'Paid' | 'Pending' | 'Free' | ''>('');
     const [notes, setNotes] = useState('');
+
+    // Line items
+    type LineItem = {
+        id: string;
+        productName: string;
+        qty: number;
+        unitPrice: number;
+        discPct: string; // string from select; parsed when calculating
+    };
+
+    const [items, setItems] = useState<LineItem[]>([
+        {
+            id: 'item-1',
+            productName: '',
+            qty: 1,
+            unitPrice: 0,
+            discPct: ''
+        }
+    ]);
+
+    // Overall discount at sale level (header)
+    const [overallDiscPct, setOverallDiscPct] = useState<string>('');
 
     const [saving, setSaving] = useState(false);
 
@@ -71,31 +89,59 @@ export default function AddSale() {
         setRef(prev => prev || generateOrderRef());
     }, []);
 
-    const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const pName = e.target.value;
-        setProductName(pName);
-        const prod = products.find(x => x.name === pName);
-        if (prod) {
-            setUnitPrice(prod.price);
-        }
+    const handleItemChange = (id: string, updater: (item: LineItem) => LineItem) => {
+        setItems(prev =>
+            prev.map(it => (it.id === id ? updater(it) : it))
+        );
     };
 
-    const calcVars = () => {
-        const price = unitPrice || 0;
-        const quantity = qty || 1;
-        const pctNum = discPct ? parseFloat(discPct) || 0 : 0;
+    const addItemRow = () => {
+        setItems(prev => [
+            ...prev,
+            {
+                id: `item-${prev.length + 1}-${Date.now()}`,
+                productName: '',
+                qty: 1,
+                unitPrice: 0,
+                discPct: ''
+            }
+        ]);
+    };
+
+    const removeItemRow = (id: string) => {
+        setItems(prev => (prev.length <= 1 ? prev : prev.filter(it => it.id !== id)));
+    };
+
+    const calcLineVars = (item: LineItem) => {
+        const price = item.unitPrice || 0;
+        const quantity = item.qty || 1;
+        const pctNum = item.discPct ? parseFloat(item.discPct) || 0 : 0;
         const discAmt = Math.round(price * quantity * pctNum);
         const final = Math.round(price * quantity * (1 - pctNum));
         return { discAmt, final, pctNum };
     };
 
-    const { discAmt, final, pctNum } = calcVars();
+    const calcTotals = () => {
+        let subtotal = 0;
+        items.forEach(it => {
+            const { final } = calcLineVars(it);
+            subtotal += final;
+        });
+
+        const overallPctNum = overallDiscPct ? parseFloat(overallDiscPct) || 0 : 0;
+        const overallDiscAmt = Math.round(subtotal * overallPctNum);
+        const overallFinal = Math.max(0, subtotal - overallDiscAmt);
+
+        return { subtotal, overallDiscAmt, overallFinal, overallPctNum };
+    };
+
+    const { subtotal, overallDiscAmt, overallFinal } = calcTotals();
 
     const getBranchAvailable = (prodName: string, branchName: string) => {
         if (!prodName || !branchName) return 0;
 
         const prodSales = sales.filter(
-            s => s.product_name === prodName && s.city === branchName
+            r => r.product_name === prodName && r.sales.city === branchName
         );
         const prodRestocks = restocks.filter(
             r => r.product_name === prodName && r.city === branchName
@@ -116,7 +162,7 @@ export default function AddSale() {
     const getGlobalAvailable = (prodName: string) => {
         if (!prodName) return 0;
 
-        const prodSales = sales.filter(s => s.product_name === prodName);
+        const prodSales = sales.filter(r => r.product_name === prodName);
         const prodRestocks = restocks.filter(r => r.product_name === prodName);
 
         const sold = prodSales.reduce((a, s) => a + s.qty, 0);
@@ -134,7 +180,6 @@ export default function AddSale() {
 
     const handleSave = async () => {
         if (
-            !productName ||
             !date ||
             !ref ||
             !channel ||
@@ -143,38 +188,67 @@ export default function AddSale() {
             !platform ||
             !customer ||
             !paymentType ||
-            !status ||
-            discPct === '' ||
-            qty < 1
+            !status
         ) {
-            showError('Missing information', 'Please fill out all mandatory fields.');
+            showError('Missing information', 'Please fill out all mandatory header fields.');
             return;
         }
 
-        // ── Stock checks ─────────────────────────────────────────────
-        const branchAvailable = getBranchAvailable(productName, branch);
-        const globalAvailable = getGlobalAvailable(productName);
+        if (items.length === 0) {
+            showError('No items', 'Please add at least one product to this sale.');
+            return;
+        }
 
-        if (globalAvailable <= 0) {
+        const perItemErrors: string[] = [];
+
+        items.forEach(it => {
+            if (!it.productName) {
+                perItemErrors.push('Each line must have a product selected.');
+            }
+            if (!it.qty || it.qty < 1) {
+                perItemErrors.push(`Quantity for ${it.productName || 'one item'} must be at least 1.`);
+            }
+        });
+
+        if (perItemErrors.length > 0) {
             showError(
-                'Out of stock',
-                `No stock available for ${productName}. Please restock before recording a sale.`
+                'Line item issues',
+                <ul style={{ paddingLeft: '18px', margin: 0 }}>
+                    {perItemErrors.map((e, idx) => <li key={idx}>{e}</li>)}
+                </ul>
             );
             return;
         }
 
-        if (branchAvailable <= 0) {
-            showError(
-                'Out of stock at branch',
-                `No stock available for ${productName} at ${branch}. Please select another branch or restock this branch.`
-            );
-            return;
-        }
+        // ── Stock checks per line ─────────────────────────────────────
+        const stockErrors: string[] = [];
 
-        if (qty > branchAvailable) {
+        items.forEach(it => {
+            if (!it.productName) return;
+            const branchAvailable = getBranchAvailable(it.productName, branch);
+            const globalAvailable = getGlobalAvailable(it.productName);
+
+            if (globalAvailable <= 0) {
+                stockErrors.push(`No stock available for ${it.productName}. Please restock before recording a sale.`);
+                return;
+            }
+
+            if (branchAvailable <= 0) {
+                stockErrors.push(`No stock available for ${it.productName} at ${branch}. Please select another branch or restock this branch.`);
+                return;
+            }
+
+            if (it.qty > branchAvailable) {
+                stockErrors.push(`Only ${branchAvailable} unit(s) available for ${it.productName} at ${branch}. Please reduce the quantity.`);
+            }
+        });
+
+        if (stockErrors.length > 0) {
             showError(
-                'Quantity exceeds available stock',
-                `Only ${branchAvailable} unit(s) available for ${productName} at ${branch}. Please reduce the quantity.`
+                'Stock issues',
+                <ul style={{ paddingLeft: '18px', margin: 0 }}>
+                    {stockErrors.map((e, idx) => <li key={idx}>{e}</li>)}
+                </ul>
             );
             return;
         }
@@ -182,41 +256,49 @@ export default function AddSale() {
         setSaving(true);
         try {
             const generatedRef = ref;
-            const activeDisc = getDiscounts().find(
-                d => String(d.pct ?? 0) === discPct
-            );
-            const discLabel = activeDisc
-                ? activeDisc.value
-                : `${(pctNum * 100).toFixed(0)}%`;
+            const discounts = getDiscounts();
 
-            const newSale: Omit<Sale, 'id' | 'created_at' | 'is_deleted' | 'deleted_at' | 'deleted_by'> = {
+            const header: CreateSalePayload['header'] = {
                 date,
                 ref: generatedRef,
-                product_name: productName,
-                qty,
                 channel,
                 sale_type: saleType,
                 city: branch,
                 platform,
                 customer,
                 payment_type: paymentType,
-                unit_price: unitPrice,
-                disc_label: discLabel,
-                disc_pct: pctNum,
-                disc_amt: discAmt,
-                final_price: final,
                 status,
                 notes
             };
 
-            await addSale(newSale);
+            const itemsPayload: CreateSalePayload['items'] = items.map(it => {
+                const { discAmt, final, pctNum } = calcLineVars(it);
+                const activeDisc = discounts.find(
+                    d => String(d.pct ?? 0) === it.discPct
+                );
+                const discLabel = activeDisc
+                    ? activeDisc.value
+                    : `${(pctNum * 100).toFixed(0)}%`;
+
+                return {
+                    product_name: it.productName,
+                    qty: it.qty,
+                    unit_price: it.unitPrice,
+                    disc_label: discLabel,
+                    disc_pct: pctNum,
+                    disc_amt: discAmt,
+                    final_price: final
+                };
+            });
+
+            await addSale({ header, items: itemsPayload });
 
             if (user) {
                 await addActivityLog({
                     type: 'add',
                     user_name: user.name,
                     role: user.role,
-                    message: `Recorded sale <strong>${generatedRef}</strong> — ${productName} × ${qty} (PKR ${final.toLocaleString()})`
+                    message: `Recorded sale <strong>${generatedRef}</strong> — ${items.length} item(s) (PKR ${overallFinal.toLocaleString()})`
                 });
             }
 
@@ -253,14 +335,6 @@ export default function AddSale() {
                 <div className="form-grid">
                     <div className="fg"><label>Date*</label><input type="date" required value={date} onChange={e => setDate(e.target.value)} /></div>
                     <div className="fg"><label>Order Reference</label><input type="text"  placeholder="e.g. ORD-001" value={ref} onChange={e => setRef(e.target.value)} /></div>
-                    <div className="fg">
-                        <label>Product*</label>
-                        <select required value={productName} onChange={handleProductChange}>
-                            <option value="">Select product…</option>
-                            {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="fg"><label>Quantity*</label><input type="number" required min="1" value={qty} onChange={e => setQty(parseInt(e.target.value) || 1)} /></div>
 
                     <div className="fg">
                         <label>Sales Channel*</label>
@@ -306,23 +380,6 @@ export default function AddSale() {
                             <option value="Debit/Credit Card">Debit/Credit Card</option>
                         </select>
                     </div>
-                    <div className="fg"><label>Unit Price (PKR)*</label><input type="number" required value={unitPrice} onChange={e => setUnitPrice(parseFloat(e.target.value) || 0)} /></div>
-
-                    <div className="fg">
-                        <label>Discount %*</label>
-                        <select
-                            required
-                            value={discPct}
-                            onChange={e => setDiscPct(e.target.value)}
-                        >
-                            <option value="">Select discount…</option>
-                            {getDiscounts().map(d => (
-                                <option key={d.id} value={String(d.pct ?? 0)}>
-                                    {d.value}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
 
                     <div className="fg">
                         <label>Payment Status*</label>
@@ -340,13 +397,142 @@ export default function AddSale() {
 
                     <div className="fg full"><label>Notes</label><input type="text" placeholder="Optional notes, tracking info…" value={notes} onChange={e => setNotes(e.target.value)} /></div>
 
+                    {/* Line items table */}
+                    <div className="fg full">
+                        <label>Line Items*</label>
+                        <div className="tbl-wrap" style={{ maxHeight: 'none' }}>
+                            <table className="mini-table" style={{ width: '100%', fontSize: '13px' }}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ textAlign: 'left' }}>Product</th>
+                                        <th style={{ textAlign: 'right', width: '80px' }}>Qty</th>
+                                        <th style={{ textAlign: 'right', width: '120px' }}>Unit Price</th>
+                                        <th style={{ textAlign: 'right', width: '140px' }}>Discount %</th>
+                                        <th style={{ textAlign: 'right', width: '140px' }}>Line Final</th>
+                                        <th style={{ width: '40px' }}></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.map(it => {
+                                        const { final } = calcLineVars(it);
+                                        return (
+                                            <tr key={it.id}>
+                                                <td>
+                                                    <select
+                                                        required
+                                                        value={it.productName}
+                                                        onChange={e => {
+                                                            const newName = e.target.value;
+                                                            const prod = products.find(x => x.name === newName);
+                                                            handleItemChange(it.id, prev => ({
+                                                                ...prev,
+                                                                productName: newName,
+                                                                unitPrice: prod ? prod.price : prev.unitPrice
+                                                            }));
+                                                        }}
+                                                    >
+                                                        <option value="">Select product…</option>
+                                                        {products.map(p => (
+                                                            <option key={p.id} value={p.name}>{p.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        value={it.qty}
+                                                        onChange={e => {
+                                                            const val = parseInt(e.target.value) || 1;
+                                                            handleItemChange(it.id, prev => ({ ...prev, qty: val }));
+                                                        }}
+                                                        style={{ width: '72px', textAlign: 'right' }}
+                                                    />
+                                                </td>
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <input
+                                                        type="number"
+                                                        value={it.unitPrice}
+                                                        onChange={e => {
+                                                            const val = parseFloat(e.target.value) || 0;
+                                                            handleItemChange(it.id, prev => ({ ...prev, unitPrice: val }));
+                                                        }}
+                                                        style={{ width: '110px', textAlign: 'right' }}
+                                                    />
+                                                </td>
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <select
+                                                        value={it.discPct}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            handleItemChange(it.id, prev => ({ ...prev, discPct: val }));
+                                                        }}
+                                                        style={{ width: '130px' }}
+                                                    >
+                                                        <option value="">Select discount…</option>
+                                                        {getDiscounts().map(d => (
+                                                            <option key={d.id} value={String(d.pct ?? 0)}>
+                                                                {d.value}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td style={{ textAlign: 'right', fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace" }}>
+                                                    {pkr(final)}
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-sm"
+                                                        onClick={() => removeItemRow(it.id)}
+                                                        disabled={items.length <= 1}
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ marginTop: '8px' }}
+                            onClick={addItemRow}
+                        >
+                            + Add item
+                        </button>
+                    </div>
+
+                    {/* Overall discount & totals */}
+                    <div className="fg">
+                        <label>Overall Discount % (optional)</label>
+                        <select
+                            value={overallDiscPct}
+                            onChange={e => setOverallDiscPct(e.target.value)}
+                        >
+                            <option value="">No overall discount</option>
+                            {getDiscounts().map(d => (
+                                <option key={d.id} value={String(d.pct ?? 0)}>
+                                    {d.value}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div className="price-preview">
-                        <div className="lbl">Final Price (PKR)</div>
-                        <div className="val">{pkr(final)}</div>
+                        <div className="lbl">Subtotal (PKR)</div>
+                        <div className="val">{pkr(subtotal)}</div>
                     </div>
                     <div className="price-preview" style={{ borderColor: 'rgba(224,92,92,.3)' }}>
-                        <div className="lbl" style={{ color: 'var(--red)' }}>Discount Amount</div>
-                        <div className="val" style={{ color: 'var(--red)' }}>{pkr(discAmt)}</div>
+                        <div className="lbl" style={{ color: 'var(--red)' }}>Overall Discount</div>
+                        <div className="val" style={{ color: 'var(--red)' }}>{pkr(overallDiscAmt)}</div>
+                    </div>
+                    <div className="price-preview" style={{ borderColor: 'rgba(52,211,153,0.3)' }}>
+                        <div className="lbl" style={{ color: 'var(--green)' }}>Final Payable (PKR)</div>
+                        <div className="val" style={{ color: 'var(--green)' }}>{pkr(overallFinal)}</div>
                     </div>
                 </div>
 

@@ -1,8 +1,22 @@
-import { Sale, Restock } from '../lib/types';
+import { Sale, SaleItem, Restock } from '../lib/types';
 import { apiClient } from './client';
 
+export interface SaleLineRow {
+    id: string;
+    sale_id: string;
+    product_name: string;
+    qty: number;
+    unit_price: number;
+    disc_label: string;
+    disc_pct: number;
+    disc_amt: number;
+    final_price: number;
+    created_at: string;
+    sales: Sale;
+}
+
 export async function getSales() {
-    const { data } = await apiClient.get<Sale[]>('/sales');
+    const { data } = await apiClient.get<SaleLineRow[]>('/sales');
     return data;
 }
 
@@ -11,8 +25,13 @@ export async function getDeletedSales() {
     return data;
 }
 
-export async function addSale(sale: Omit<Sale, 'id' | 'created_at' | 'is_deleted' | 'deleted_at' | 'deleted_by'>) {
-    const { data } = await apiClient.post<Sale>('/sales', sale);
+export interface CreateSalePayload {
+    header: Omit<Sale, 'id' | 'is_deleted' | 'deleted_at' | 'deleted_by' | 'created_at'>;
+    items: Omit<SaleItem, 'id' | 'sale_id' | 'created_at'>[];
+}
+
+export async function addSale(payload: CreateSalePayload) {
+    const { data } = await apiClient.post<{ sale: Sale; items: SaleItem[] }>('/sales', payload);
     return data;
 }
 
