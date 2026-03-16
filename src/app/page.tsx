@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSales } from '@/api/sales';
+import { getSales, SaleLineRow } from '@/api/sales';
 import { getProducts } from '@/api/inventory';
-import { Sale, Product } from '@/lib/types';
+import { Product } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [sales, setSales] = useState<Sale[]>([]);
+  const [sales, setSales] = useState<SaleLineRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -44,8 +44,8 @@ export default function Dashboard() {
   if (loading || (user && user.role === 'manager')) return <div className="p-8">Loading dashboard...</div>;
 
   // --- Filtering Logic ---
-  const applyFilter = (s: Sale) => {
-    const saleDate = new Date(s.date);
+  const applyFilter = (s: SaleLineRow) => {
+    const saleDate = new Date(s.sales.date);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
@@ -81,7 +81,7 @@ export default function Dashboard() {
   filteredSales.forEach(s => {
     totalRev += s.final_price;
     prodMap.set(s.product_name, (prodMap.get(s.product_name) || 0) + s.final_price);
-    if (s.channel) chanMap.set(s.channel, (chanMap.get(s.channel) || 0) + s.final_price);
+    if (s.sales.channel) chanMap.set(s.sales.channel, (chanMap.get(s.sales.channel) || 0) + s.final_price);
   });
 
   const topProducts = Array.from(prodMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -156,7 +156,13 @@ export default function Dashboard() {
         </div>
         <div className="kpi amber">
           <div className="kpi-label">Pending</div>
-          <div className="kpi-val">{pkr(filteredSales.filter(s => s.status === 'Pending').reduce((a, s) => a + s.final_price, 0))}</div>
+          <div className="kpi-val">
+            {pkr(
+              filteredSales
+                .filter(s => s.sales.status === 'Pending')
+                .reduce((a, s) => a + s.final_price, 0)
+            )}
+          </div>
           <div className="kpi-sub">Awaiting payment</div>
         </div>
         <div className="kpi red">
@@ -215,13 +221,13 @@ export default function Dashboard() {
             <tbody>
               {filteredSales.slice(0, 8).map(s => (
                 <tr key={s.id}>
-                  <td className="mono">{s.date}</td>
-                  <td className="mono">{s.ref}</td>
+                  <td className="mono">{s.sales.date}</td>
+                  <td className="mono">{s.sales.ref}</td>
                   <td style={{ fontWeight: 600 }}>{s.product_name}</td>
                   <td>{s.qty}</td>
-                  <td><span className="badge b-gray">{s.channel}</span></td>
+                  <td><span className="badge b-gray">{s.sales.channel}</span></td>
                   <td className="mono" style={{ fontWeight: 700, color: 'var(--gold)' }}>{pkr(s.final_price)}</td>
-                  <td>{statusBadge(s.status)}</td>
+                  <td>{statusBadge(s.sales.status)}</td>
                 </tr>
               ))}
               {filteredSales.length === 0 && (

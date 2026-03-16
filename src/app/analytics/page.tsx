@@ -6,15 +6,14 @@ import {
     BarChart, Bar,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { getSales } from '@/api/sales';
+import { getSales, SaleLineRow } from '@/api/sales';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { Sale } from '@/lib/types';
 
 export default function AnalyticsPage() {
     const { user } = useAuth();
     const router = useRouter();
-    const [sales, setSales] = useState<Sale[]>([]);
+    const [sales, setSales] = useState<SaleLineRow[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Filters
@@ -48,12 +47,12 @@ export default function AnalyticsPage() {
     if (dateRange === '1Y') filterDate.setFullYear(filterDate.getFullYear() - 1);
     if (dateRange === 'ALL') filterDate.setFullYear(2000);
 
-    const filteredSales = sales.filter(s => new Date(s.date) >= filterDate);
+    const filteredSales = sales.filter(s => new Date(s.sales.date) >= filterDate);
 
     // Revenue Over Time (Group by Date)
     const revByDateMap = new Map<string, number>();
     filteredSales.forEach(s => {
-        revByDateMap.set(s.date, (revByDateMap.get(s.date) || 0) + s.final_price);
+        revByDateMap.set(s.sales.date, (revByDateMap.get(s.sales.date) || 0) + s.final_price);
     });
     const revOverTime = Array.from(revByDateMap.entries())
         .map(([date, revenue]) => ({ date, revenue }))
@@ -73,7 +72,7 @@ export default function AnalyticsPage() {
     // Top Channels
     const chanMap = new Map<string, number>();
     filteredSales.forEach(s => {
-        if (s.channel) chanMap.set(s.channel, (chanMap.get(s.channel) || 0) + s.final_price);
+        if (s.sales.channel) chanMap.set(s.sales.channel, (chanMap.get(s.sales.channel) || 0) + s.final_price);
     });
     const topChannels = Array.from(chanMap.entries())
         .map(([name, rev]) => ({ name, rev }))
@@ -83,7 +82,7 @@ export default function AnalyticsPage() {
     // Top Cities
     const cityMap = new Map<string, number>();
     filteredSales.forEach(s => {
-        if (s.city) cityMap.set(s.city, (cityMap.get(s.city) || 0) + s.final_price);
+        if (s.sales.city) cityMap.set(s.sales.city, (cityMap.get(s.sales.city) || 0) + s.final_price);
     });
     const topCities = Array.from(cityMap.entries())
         .map(([name, rev]) => ({ name, rev }))
@@ -204,7 +203,7 @@ export default function AnalyticsPage() {
                                 <div className={`rank-num r${i + 1}`}>{i + 1}</div>
                                 <div className="rank-info">
                                     <div className="rank-name">{c.name}</div>
-                                    <div className="rank-sub">{filteredSales.filter(s => s.city === c.name).length} transactions</div>
+                                    <div className="rank-sub">{filteredSales.filter(s => s.sales.city === c.name).length} transactions</div>
                                 </div>
                                 <div className="rank-val">{pkr(c.rev)}</div>
                             </div>
