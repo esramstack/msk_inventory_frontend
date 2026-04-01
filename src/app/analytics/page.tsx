@@ -47,7 +47,8 @@ export default function AnalyticsPage() {
     if (dateRange === '1Y') filterDate.setFullYear(filterDate.getFullYear() - 1);
     if (dateRange === 'ALL') filterDate.setFullYear(2000);
 
-    const filteredSales = sales.filter(s => new Date(s.sales.date) >= filterDate);
+    const salesWithHeaders = sales.filter((s): s is SaleLineRow & { sales: NonNullable<SaleLineRow['sales']> } => s.sales != null);
+    const filteredSales = salesWithHeaders.filter(s => new Date(s.sales.date) >= filterDate);
 
     // Revenue Over Time (Group by Date)
     const revByDateMap = new Map<string, number>();

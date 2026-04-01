@@ -141,7 +141,7 @@ export default function AddSale() {
         if (!prodName || !branchName) return 0;
 
         const prodSales = sales.filter(
-            r => r.product_name === prodName && r.sales.city === branchName
+            r => r.product_name === prodName && r.sales?.city === branchName
         );
         const prodRestocks = restocks.filter(
             r => r.product_name === prodName && r.city === branchName

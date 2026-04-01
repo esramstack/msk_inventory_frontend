@@ -3,7 +3,7 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { getSales, softDeleteSale, SaleLineRow } from '@/api/sales';
-import { Sale, SaleItem } from '@/lib/types';
+import { Sale } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
@@ -44,14 +44,18 @@ export default function SalesLog() {
 
     const handleDelete = (row: SaleLineRow) => {
         if (!user || !isAdmin) return;
-        setPendingDelete(row.sales as any);
+        const header = row.sales;
+        const saleId = header?.id ?? row.sale_id;
+        if (!saleId) return;
+        setPendingDelete({ ...header, id: saleId } as Sale);
     };
 
     const confirmDelete = async () => {
         if (!user || !pendingDelete) return;
+        if (!pendingDelete.id) return;
         setDeleting(true);
         try {
-            await softDeleteSale(pendingDelete.id!, user.name);
+            await softDeleteSale(pendingDelete.id, user.name);
             await loadData(); // Reload
             setPendingDelete(null);
         } catch (e) {
@@ -91,7 +95,9 @@ export default function SalesLog() {
         }
     }
 
-    const filteredRows = rows.filter(r => {
+    const rowsWithSales = rows.filter((r): r is SaleLineRow & { sales: Sale } => r.sales != null);
+
+    const filteredRows = rowsWithSales.filter(r => {
         const s = r.sales;
         const matchesSearch = (r.product_name + s.channel + s.customer + s.ref + s.city + s.notes)
             .toLowerCase()
@@ -113,12 +119,12 @@ export default function SalesLog() {
         return matchesSearch && matchesStatus && matchesBranch && matchesProduct && matchesPayment && matchesDate;
     });
 
-    const branchOptions = Array.from(new Set(rows.map(r => r.sales.city).filter(Boolean))) as string[];
-    const productOptions = Array.from(new Set(rows.map(r => r.product_name).filter(Boolean))) as string[];
-    const paymentOptions = Array.from(new Set(rows.map(r => r.sales.payment_type).filter(Boolean))) as string[];
+    const branchOptions = Array.from(new Set(rowsWithSales.map(r => r.sales.city).filter(Boolean))) as string[];
+    const productOptions = Array.from(new Set(rowsWithSales.map(r => r.product_name).filter(Boolean))) as string[];
+    const paymentOptions = Array.from(new Set(rowsWithSales.map(r => r.sales.payment_type).filter(Boolean))) as string[];
 
     // Group sales by order reference so multi-line orders appear together
-    const groupedByRef = filteredRows.reduce((acc: Record<string, SaleLineRow[]>, row) => {
+    const groupedByRef = filteredRows.reduce((acc: Record<string, (SaleLineRow & { sales: Sale })[]>, row) => {
         const ref = row.sales.ref;
         if (!acc[ref]) acc[ref] = [];
         acc[ref].push(row);

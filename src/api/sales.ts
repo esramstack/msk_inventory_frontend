@@ -12,7 +12,8 @@ export interface SaleLineRow {
     disc_amt: number;
     final_price: number;
     created_at: string;
-    sales: Sale;
+    /** Parent sale; null if the header row is missing (orphan line item). */
+    sales: Sale | null;
 }
 
 export async function getSales() {
