@@ -103,14 +103,14 @@ export default function StockLevels() {
         const branchNames = Array.from(
             new Set(
                 [
-                    ...salesData.map(r => r.sales.city).filter(Boolean),
+                    ...salesData.map(r => r.sales?.city).filter(Boolean),
                     ...restockData.map(r => r.city).filter(Boolean),
                 ] as string[]
             )
         );
 
         const data: BranchData[] = branchNames.map(name => {
-            const branchSales = salesData.filter(r => r.sales.city === name);
+            const branchSales = salesData.filter(r => r.sales?.city === name);
             const branchRestocks = restockData.filter(r => r.city === name);
 
             // All products that ever moved in this branch

@@ -52,6 +52,7 @@ export default function SalesLog() {
 
     const confirmDelete = async () => {
         if (!user || !pendingDelete) return;
+        if (!pendingDelete.id) return;
         setDeleting(true);
         try {
             await softDeleteSale(pendingDelete.id, user.name);
@@ -123,7 +124,7 @@ export default function SalesLog() {
     const paymentOptions = Array.from(new Set(rowsWithSales.map(r => r.sales.payment_type).filter(Boolean))) as string[];
 
     // Group sales by order reference so multi-line orders appear together
-    const groupedByRef = filteredRows.reduce((acc: Record<string, SaleLineRow[]>, row) => {
+    const groupedByRef = filteredRows.reduce((acc: Record<string, (SaleLineRow & { sales: Sale })[]>, row) => {
         const ref = row.sales.ref;
         if (!acc[ref]) acc[ref] = [];
         acc[ref].push(row);

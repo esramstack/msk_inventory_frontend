@@ -43,8 +43,12 @@ export default function Dashboard() {
 
   if (loading || (user && user.role === 'manager')) return <div className="p-8">Loading dashboard...</div>;
 
+  const salesWithHeaders = sales.filter(
+    (s): s is SaleLineRow & { sales: NonNullable<SaleLineRow['sales']> } => s.sales != null
+  );
+
   // --- Filtering Logic ---
-  const applyFilter = (s: SaleLineRow) => {
+  const applyFilter = (s: SaleLineRow & { sales: NonNullable<SaleLineRow['sales']> }) => {
     const saleDate = new Date(s.sales.date);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -69,7 +73,7 @@ export default function Dashboard() {
     return true; // all
   };
 
-  const filteredSales = sales.filter(applyFilter);
+  const filteredSales = salesWithHeaders.filter(applyFilter);
 
   // --- Calculations ---
   let totalRev = 0;
