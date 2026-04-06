@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { getQuotes, addQuote, updateQuoteStatus, deleteQuote } from '@/api/quotes';
 import { getProducts, getConfigLists } from '@/api/inventory';
 import { addActivityLog } from '@/api/quotes';
@@ -9,6 +9,119 @@ import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 const DEFAULT_BRANCH_ADDRESS = '2nd Floor, Spogmay Plaza, MSK Aesthetics, Univ road, Peshawar';
+
+function pkr(v: number) {
+    return 'PKR ' + Number(Math.round(v)).toLocaleString();
+}
+
+type QuotePrintParams = {
+    logoUrl: string;
+    ref: string;
+    date: string;
+    validUntil?: string;
+    client: string;
+    contact?: string;
+    address?: string;
+    branchAddress: string;
+    createdBy?: string;
+    status: Quote['status'];
+    notes?: string;
+    discPct: number;
+    subtotal: number;
+    discAmt: number;
+    total: number;
+    items: { product_name: string; qty: number; unit_price: number; line_total?: number }[];
+};
+
+function buildQuotePrintHtml(p: QuotePrintParams): string {
+    const itemsHtml = p.items.map(i => {
+        const line = i.line_total ?? i.qty * i.unit_price;
+        return `
+      <tr>
+        <td style="font-weight:600">${i.product_name || 'Item'}</td>
+        <td style="text-align:center">${i.qty}</td>
+        <td style="text-align:right">${pkr(i.unit_price)}</td>
+        <td style="text-align:right;font-weight:600">${pkr(line)}</td>
+      </tr>
+    `;
+    }).join('');
+
+    const docKind = p.status === 'Accepted' || p.status === 'Sent' ? 'INVOICE' : 'QUOTE';
+
+    return `
+      <div class="inv-wrap">
+        <div class="inv-header-block">
+          <div class="inv-header">
+            <div>
+              <img src="${p.logoUrl}" class="inv-logo" alt="MSK Aesthetics" />
+            <!--   <div class="inv-tagline">Premium Hair &amp; Skin Care Solutions</div> -->
+            </div>
+            <div class="inv-meta">
+              <strong>${docKind}</strong>
+              Ref: ${p.ref}<br>
+              Date: ${new Date(p.date).toLocaleDateString()}<br>
+              Created By: ${p.createdBy || ''}
+            </div>
+          </div>
+        </div>
+        <hr class="inv-divider" />
+        <div class="inv-parties">
+          <div>
+            <div class="inv-party-label">Billed To:</div>
+            <div class="inv-party-name">${p.client || 'Client Name'}</div>
+            <div class="inv-party-detail">
+              ${p.contact ? `Contact: ${p.contact}<br>` : ''}
+              ${p.address ? `${p.address}` : ''}
+            </div>
+          </div>
+          <div>
+            <div class="inv-party-label">From:</div>
+            <div class="inv-party-name">MSK Aesthetics</div>
+            <div class="inv-party-detail">
+              ${p.branchAddress.replace(/\n/g, '<br>')}
+            </div>
+          </div>
+        </div>
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th style="text-align:center">Qty</th>
+              <th style="text-align:right">Unit Price</th>
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2"></td>
+              <td style="text-align:right">Subtotal:</td>
+              <td style="text-align:right">${pkr(p.subtotal)}</td>
+            </tr>
+            ${p.discPct > 0 ? `
+            <tr>
+              <td colspan="2"></td>
+              <td style="text-align:right;color:#c0392b">Discount (${p.discPct * 100}%):</td>
+              <td style="text-align:right;color:#c0392b">− ${pkr(p.discAmt)}</td>
+            </tr>` : ''}
+            <tr class="grand-total">
+              <td colspan="2"></td>
+              <td style="text-align:right">Total:</td>
+              <td style="text-align:right">${pkr(p.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        ${p.notes ? `<div class="inv-notes"><strong>Notes / Terms:</strong><br>${p.notes}</div>` : ''}
+        ${p.validUntil ? `<div class="inv-validity" style="margin-left:auto; display:block; width:fit-content">Valid until: ${new Date(p.validUntil).toLocaleDateString()}</div>` : ''}
+        <div class="inv-footer">
+          Thank you for choosing MSK Aesthetics.<br>
+          This is a computer-generated document and requires no signature.
+        </div>
+      </div>
+    `;
+}
 
 export default function QuotesPage() {
     const { user } = useAuth();
@@ -24,6 +137,8 @@ export default function QuotesPage() {
     const [saving, setSaving] = useState(false);
     const [printOverlay, setPrintOverlay] = useState(false);
     const [currentPrintHtml, setCurrentPrintHtml] = useState('');
+    const [pdfExportRef, setPdfExportRef] = useState('');
+    const [pdfModalTitle, setPdfModalTitle] = useState('');
 
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
     const [validUntil, setValidUntil] = useState('');
@@ -179,91 +294,66 @@ export default function QuotesPage() {
     // Printing logic
     const handlePreviewPDF = () => {
         const logoUrl = typeof window !== 'undefined' ? `${window.location.origin}/msk-logo.png` : '/msk-logo.png';
-        // Generate the HTML for the PDF representation based on the native CSS class structures.
-        const itemsHtml = items.map(i => `
-      <tr>
-        <td style="font-weight:600">${i.product_name || 'Item'}</td>
-        <td style="text-align:center">${i.qty}</td>
-        <td style="text-align:right">${pkr(i.unit_price)}</td>
-        <td style="text-align:right;font-weight:600">${pkr(i.qty * i.unit_price)}</td>
-      </tr>
-    `).join('');
-
-        const html = `
-      <div class="inv-wrap">
-        <div class="inv-header-block">
-          <div class="inv-header">
-            <div>
-              <img src="${logoUrl}" class="inv-logo" alt="MSK Aesthetics" />
-            <!--   <div class="inv-tagline">Premium Hair &amp; Skin Care Solutions</div> -->
-            </div>
-            <div class="inv-meta">
-              <strong>${status === 'Accepted' || status === 'Sent' ? 'INVOICE' : 'QUOTE'}</strong>
-              Ref: ${ref}<br>
-              Date: ${new Date(date).toLocaleDateString()}<br>
-              Created By: ${createdBy || user?.name || ''}
-            </div>
-          </div>
-        </div>
-        <hr class="inv-divider" />
-        <div class="inv-parties">
-          <div>
-            <div class="inv-party-label">Billed To:</div>
-            <div class="inv-party-name">${client || 'Client Name'}</div>
-            <div class="inv-party-detail">
-              ${contact ? `Contact: ${contact}<br>` : ''}
-              ${address ? `${address}` : ''}
-            </div>
-          </div>
-          <div>
-            <div class="inv-party-label">From:</div>
-            <div class="inv-party-name">MSK Aesthetics</div>
-            <div class="inv-party-detail">
-              ${branchAddress.replace(/\n/g, '<br>')}
-            </div>
-          </div>
-        </div>
-        <table class="inv-table">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th style="text-align:center">Qty</th>
-              <th style="text-align:right">Unit Price</th>
-              <th style="text-align:right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colspan="2"></td>
-              <td style="text-align:right">Subtotal:</td>
-              <td style="text-align:right">${pkr(subtotal)}</td>
-            </tr>
-            ${discPct > 0 ? `
-            <tr>
-              <td colspan="2"></td>
-              <td style="text-align:right;color:#c0392b">Discount (${discPct * 100}%):</td>
-              <td style="text-align:right;color:#c0392b">− ${pkr(discAmt)}</td>
-            </tr>` : ''}
-            <tr class="grand-total">
-              <td colspan="2"></td>
-              <td style="text-align:right">Total:</td>
-              <td style="text-align:right">${pkr(total)}</td>
-            </tr>
-          </tfoot>
-        </table>
-        ${notes ? `<div class="inv-notes"><strong>Notes / Terms:</strong><br>${notes}</div>` : ''}
-        ${validUntil ? `<div class="inv-validity" style="margin-left:auto; display:block; width:fit-content">Valid until: ${new Date(validUntil).toLocaleDateString()}</div>` : ''}
-        <div class="inv-footer">
-          Thank you for choosing MSK Aesthetics.<br>
-          This is a computer-generated document and requires no signature.
-        </div>
-      </div>
-    `;
-
+        const html = buildQuotePrintHtml({
+            logoUrl,
+            ref,
+            date,
+            validUntil,
+            client,
+            contact,
+            address,
+            branchAddress,
+            createdBy: createdBy || user?.name || '',
+            status,
+            notes,
+            discPct,
+            subtotal,
+            discAmt,
+            total,
+            items: items.map(i => ({
+                product_name: i.product_name,
+                qty: i.qty,
+                unit_price: i.unit_price
+            }))
+        });
         setCurrentPrintHtml(html);
+        setPdfExportRef(ref);
+        setPdfModalTitle(`${ref} — ${client || 'Quote'}`);
+        setPrintOverlay(true);
+    };
+
+    const openQuotePreviewFromHistory = (q: Quote) => {
+        if (!q.items?.length) {
+            alert('This quote has no line items to preview.');
+            return;
+        }
+        const logoUrl = typeof window !== 'undefined' ? `${window.location.origin}/msk-logo.png` : '/msk-logo.png';
+        const html = buildQuotePrintHtml({
+            logoUrl,
+            ref: q.ref,
+            date: q.date,
+            validUntil: q.valid_until,
+            client: q.client,
+            contact: q.contact,
+            address: q.address,
+            branchAddress: DEFAULT_BRANCH_ADDRESS,
+            createdBy: q.created_by,
+            status: q.status,
+            notes: q.notes,
+            discPct: q.disc_pct,
+            subtotal: q.subtotal,
+            discAmt: q.disc_amt,
+            total: q.total,
+            items: q.items.map(it => ({
+                product_name: it.product_name,
+                qty: it.qty,
+                unit_price: it.unit_price,
+                line_total: it.line_total
+            }))
+        });
+        setCurrentPrintHtml(html);
+        setPdfExportRef(q.ref);
+        setPdfModalTitle(`${q.ref} — ${q.client}`);
         setPrintOverlay(true);
     };
 
@@ -295,7 +385,7 @@ export default function QuotesPage() {
 
         const opt = {
             margin: 0,
-            filename: `MSK_${ref}.pdf`,
+            filename: `MSK_${pdfExportRef || ref}.pdf`,
             image: { type: 'jpeg' as const, quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true },
             jsPDF: { unit: 'in' as const, format: 'a4', orientation: 'portrait' as const }
@@ -308,8 +398,6 @@ export default function QuotesPage() {
 
     const getBranches = () => configs.filter(c => c.type === 'city');
     const getDiscounts = () => configs.filter(c => c.type === 'discount').sort((a, b) => (a.pct || 0) - (b.pct || 0));
-
-    const pkr = (v: number) => 'PKR ' + Number(Math.round(v)).toLocaleString();
     const qStatusBadge = (s: string) => {
         const map: any = { Draft: 'q-draft', Sent: 'q-sent', Accepted: 'q-accepted', Rejected: 'q-rejected' };
         return <span className={`q-status-badge ${map[s] || 'q-draft'}`}>{s}</span>;
@@ -448,7 +536,11 @@ export default function QuotesPage() {
                         </tr></thead>
                         <tbody>
                             {filteredQuotes.map(q => (
-                                <tr key={q.id}>
+                                <tr
+                                    key={q.id}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => openQuotePreviewFromHistory(q)}
+                                >
                                     <td className="mono">{q.date}</td>
                                     <td className="mono" style={{ color: 'var(--text3)' }}>{q.ref}</td>
                                     <td style={{ fontWeight: 500 }}>{q.client}</td>
@@ -459,7 +551,7 @@ export default function QuotesPage() {
                                     <td style={{ fontWeight: 600, color: 'var(--gold)', fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace" }}>{pkr(q.total)}</td>
                                     <td>{qStatusBadge(q.status)}</td>
                                     <td className="muted">{q.created_by || '—'}</td>
-                                    <td>
+                                    <td onClick={e => e.stopPropagation()}>
                                         <select
                                             value={q.status}
                                             onChange={e => handleChangeStatus(q.id!, e.target.value)}
@@ -468,7 +560,7 @@ export default function QuotesPage() {
                                             <option>Draft</option><option>Sent</option><option>Accepted</option><option>Rejected</option>
                                         </select>
                                         {isAdmin && (
-                                            <button className="btn btn-danger btn-sm ml-2" onClick={() => handleDelete(q.id!, q.ref)}>✕</button>
+                                            <button type="button" className="btn btn-danger btn-sm ml-2" onClick={() => handleDelete(q.id!, q.ref)}>✕</button>
                                         )}
                                     </td>
                                 </tr>
@@ -498,7 +590,7 @@ export default function QuotesPage() {
                 <div id="pdf-overlay" className="show">
                     <div id="pdf-modal">
                         <div id="pdf-modal-header">
-                            <h3>Preview PDF Document</h3>
+                            <h3>{pdfModalTitle || 'Preview PDF Document'}</h3>
                             <div id="pdf-modal-actions">
                                 <button className="btn btn-primary btn-sm" onClick={handleExportPDF}>Download PDF</button>
                                 <button className="btn btn-secondary btn-sm" onClick={() => setPrintOverlay(false)}>Close</button>
