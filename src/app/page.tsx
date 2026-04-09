@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSales, SaleLineRow } from '@/api/sales';
+import { getRestocks, getSales, SaleLineRow } from '@/api/sales';
 import { getProducts } from '@/api/inventory';
-import { Product } from '@/lib/types';
+import { Product, Restock } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
 
@@ -11,6 +11,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [sales, setSales] = useState<SaleLineRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [restocks, setRestocks] = useState<Restock[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters State
@@ -29,9 +30,10 @@ export default function Dashboard() {
     async function loadData() {
       if (user?.role !== 'admin') return; // Don't load dashboard data for managers
       try {
-        const [s, p] = await Promise.all([getSales(), getProducts()]);
+        const [s, p, r] = await Promise.all([getSales(), getProducts(), getRestocks()]);
         setSales(s);
         setProducts(p);
+        setRestocks(r);
       } catch (e) {
         console.error(e);
       } finally {
@@ -109,9 +111,19 @@ export default function Dashboard() {
   };
 
   const lowStockCount = products.filter(p => {
-    const sold = sales.filter(s => s.product_name === p.name).reduce((a, b) => a + b.qty, 0);
-    // Rough estimate for dashboard (full logic in stock page)
-    return (50 - sold) <= p.reorder_level;
+    // Mirror Stock Levels logic: opening ("Initial Stock") + restocks - sold
+    const sold = sales.filter(s => s.product_name === p.name).reduce((sum, row) => sum + row.qty, 0);
+    const allRestocked = restocks
+      .filter(r => r.product_name === p.name)
+      .reduce((sum, row) => sum + row.qty, 0);
+
+    const initialEntry = restocks.find(r => r.product_name === p.name && r.supplier === 'Initial Stock');
+    const opening = initialEntry ? initialEntry.qty : 0;
+    const restocked = allRestocked - opening;
+    const total = opening + restocked;
+    const current = total - sold;
+
+    return current <= p.reorder_level;
   }).length;
 
   return (
