@@ -9,7 +9,7 @@ First, run the development server:
 npm run dev
 # orjh
 yarn devj
-# or
+# ors
 pnpm dev
 # or
 bun dev
