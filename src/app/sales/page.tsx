@@ -119,6 +119,9 @@ export default function SalesLog() {
         return matchesSearch && matchesStatus && matchesBranch && matchesProduct && matchesPayment && matchesDate;
     });
 
+    // Sum of all displayed line-item final prices after filters are applied.
+    const grandTotal = filteredRows.reduce((sum, r) => sum + (r.final_price || 0), 0);
+
     const branchOptions = Array.from(new Set(rowsWithSales.map(r => r.sales.city).filter(Boolean))) as string[];
     const productOptions = Array.from(new Set(rowsWithSales.map(r => r.product_name).filter(Boolean))) as string[];
     const paymentOptions = Array.from(new Set(rowsWithSales.map(r => r.sales.payment_type).filter(Boolean))) as string[];
@@ -279,6 +282,26 @@ export default function SalesLog() {
                             setDatePreset('');
                         }}
                     />
+                </div>
+
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 0 12px',
+                    borderBottom: '1px solid var(--border)',
+                    marginBottom: 12
+                }}>
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>Total (Final Price)</span>
+                    <span style={{
+                        fontWeight: 800,
+                        color: 'var(--gold)',
+                        fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace",
+                        fontSize: 16
+                    }}>
+                        {pkr(grandTotal)}
+                    </span>
                 </div>
 
                 <div className="tbl-wrap" id="sales-tbl-wrap">

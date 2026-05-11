@@ -15,7 +15,8 @@ import {
     Settings,
     Users,
     LogOut,
-    FileText
+    FileText,
+    ArrowLeftRight
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -121,6 +122,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                 {navLink('/sales', 'Sales Log', <ReceiptText size={16} />)}
                 {navLink('/sales/add', 'Add Sale', <PlusCircle size={16} />)}
                 {navLink('/restock', 'Restock', <Box size={16} />)}
+                {navLink('/transfers', 'Stock Transfers', <ArrowLeftRight size={16} />, true)}
                 {navLink('/quotes', 'Quotes / Invoices', <FileText size={16} />)}
 
                 {isAdmin && (

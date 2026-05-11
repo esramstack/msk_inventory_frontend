@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { getProducts } from '@/api/inventory';
 import { getSales, getRestocks, SaleLineRow } from '@/api/sales';
-import { Product, Restock } from '@/lib/types';
+import { getTransfers } from '@/api/transfers';
+import { Product, Restock, StockTransfer } from '@/lib/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface StockRow {
@@ -60,8 +61,8 @@ export default function StockLevels() {
     useEffect(() => {
         async function loadData() {
             try {
-                const [products, salesData, restockData] = await Promise.all([
-                    getProducts(), getSales(), getRestocks()
+                const [products, salesData, restockData, transferData] = await Promise.all([
+                    getProducts(), getSales(), getRestocks(), getTransfers()
                 ]);
 
                 setSales(salesData);
@@ -88,7 +89,7 @@ export default function StockLevels() {
                 setStockRows(rows);
 
                 // ── Branch breakdown ───────────────────────────────────
-                buildBranchData(salesData, restockData);
+                buildBranchData(salesData, restockData, transferData);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -98,13 +99,15 @@ export default function StockLevels() {
         loadData();
     }, []);
 
-    function buildBranchData(salesData: SaleLineRow[], restockData: Restock[]) {
-        // Branch names where either a sale or restock has a city/branch recorded
+    function buildBranchData(salesData: SaleLineRow[], restockData: Restock[], transferData: StockTransfer[]) {
+        // Branch names from sales, restocks, or transfers (so transfer-only branches appear)
+        const transferCities = transferData.flatMap(t => [t.from_city, t.to_city]).filter(Boolean);
         const branchNames = Array.from(
             new Set(
                 [
                     ...salesData.map(r => r.sales?.city).filter(Boolean),
                     ...restockData.map(r => r.city).filter(Boolean),
+                    ...transferCities,
                 ] as string[]
             )
         );
@@ -136,7 +139,20 @@ export default function StockLevels() {
 
                 // "Restocked" here follows the overview semantics = movements after opening
                 const restocked = allRestocked - opening;
-                const current = opening + restocked - sold;
+
+                const transferredIn = transferData
+                    .filter(t => !t.is_undone && t.to_city === name)
+                    .flatMap(t => t.items ?? [])
+                    .filter(i => i.product_name === prod)
+                    .reduce((a, i) => a + i.qty, 0);
+
+                const transferredOut = transferData
+                    .filter(t => !t.is_undone && t.from_city === name)
+                    .flatMap(t => t.items ?? [])
+                    .filter(i => i.product_name === prod)
+                    .reduce((a, i) => a + i.qty, 0);
+
+                const current = opening + restocked - sold + transferredIn - transferredOut;
                 const total = opening + restocked;
 
                 const healthPct = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;

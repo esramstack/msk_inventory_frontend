@@ -105,3 +105,25 @@ export interface ActivityLog {
     message: string;
     created_at?: string;
 }
+
+export interface StockTransferItem {
+    id?: string;
+    transfer_id?: string;
+    product_name: string;
+    qty: number;
+    created_at?: string;
+}
+
+export interface StockTransfer {
+    id?: string;
+    date: string;
+    from_city: string;
+    to_city: string;
+    notes?: string;
+    created_by?: string;
+    is_undone?: boolean;
+    undone_by?: string;
+    undone_at?: string;
+    created_at?: string;
+    items?: StockTransferItem[];
+}
