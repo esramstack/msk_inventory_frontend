@@ -28,6 +28,7 @@ export default function TransfersPage() {
     const [saving, setSaving] = useState(false);
     const [undoing, setUndoing] = useState(false);
     const [pendingUndo, setPendingUndo] = useState<StockTransfer | null>(null);
+    const [showUndone, setShowUndone] = useState(false);
 
     const [fromCity, setFromCity] = useState('');
     const [toCity, setToCity] = useState('');
@@ -224,6 +225,8 @@ export default function TransfersPage() {
         setLineItems(next.length ? next : [{ id: Math.random().toString(), product_name: '', qty: 1 }]);
     };
 
+    const visibleTransfers = showUndone ? transfers : transfers.filter(t => !t.is_undone);
+
     if (authLoading) {
         return (
             <div className="page active">
@@ -344,7 +347,34 @@ export default function TransfersPage() {
             )}
 
             <div className="card">
-                <div className="card-title">Transfer history</div>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '10px'
+                    }}
+                >
+                    <div className="card-title" style={{ marginBottom: 0 }}>Transfer history</div>
+                    <label
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                            color: 'var(--text2)',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={showUndone}
+                            onChange={e => setShowUndone(e.target.checked)}
+                            style={{ width: '13px', height: '13px' }}
+                        />
+                        Show undone
+                    </label>
+                </div>
                 <div className="tbl-wrap">
                     <table>
                         <thead>
@@ -360,7 +390,7 @@ export default function TransfersPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {transfers.map(t => {
+                            {visibleTransfers.map(t => {
                                 const items = t.items || [];
                                 const summary = items.map(i => `${i.product_name}×${i.qty}`).join('; ') || '—';
                                 const undone = Boolean(t.is_undone);
@@ -392,10 +422,10 @@ export default function TransfersPage() {
                                     </tr>
                                 );
                             })}
-                            {transfers.length === 0 && (
+                            {visibleTransfers.length === 0 && (
                                 <tr>
                                     <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: '28px' }}>
-                                        No transfers yet
+                                        {showUndone ? 'No transfers yet' : 'No active transfers'}
                                     </td>
                                 </tr>
                             )}
