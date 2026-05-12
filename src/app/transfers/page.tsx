@@ -8,18 +8,12 @@ import { getTransfers, addTransfer, undoTransfer } from '@/api/transfers';
 import { getSales, getRestocks, SaleLineRow } from '@/api/sales';
 import { addActivityLog } from '@/api/quotes';
 import { Product, Restock, StockTransfer } from '@/lib/types';
+import { getBranchAvailableAsOf } from '@/lib/stockUtils';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 type LineItem = { id: string; product_name: string; qty: number };
 type InsufficientDetail = { product_name: string; requested: number; available: number };
-
-const dateOnly = (v: string) => new Date(v).toISOString().split('T')[0];
-const transferActiveAsOf = (t: StockTransfer, asOfDate: string) => {
-    if (!t.is_undone) return true;
-    if (!t.undone_at) return true;
-    return dateOnly(t.undone_at) > asOfDate;
-};
 
 export default function TransfersPage() {
     const { user, loading: authLoading } = useAuth();
@@ -34,6 +28,7 @@ export default function TransfersPage() {
     const [saving, setSaving] = useState(false);
     const [undoing, setUndoing] = useState(false);
     const [pendingUndo, setPendingUndo] = useState<StockTransfer | null>(null);
+    const [showUndone, setShowUndone] = useState(false);
 
     const [fromCity, setFromCity] = useState('');
     const [toCity, setToCity] = useState('');
@@ -105,34 +100,6 @@ export default function TransfersPage() {
         return map;
     };
 
-    const computeAvailableAsOf = (productName: string, branch: string, asOfDate: string) => {
-        const opening = restocks
-            .filter(r => r.city === branch && r.product_name === productName && r.supplier === 'Initial Stock' && r.date <= asOfDate)
-            .reduce((sum, r) => sum + Number(r.qty || 0), 0);
-
-        const restocked = restocks
-            .filter(r => r.city === branch && r.product_name === productName && r.supplier !== 'Initial Stock' && r.date <= asOfDate)
-            .reduce((sum, r) => sum + Number(r.qty || 0), 0);
-
-        const sold = sales
-            .filter(s => s.product_name === productName && s.sales?.city === branch && !s.sales?.is_deleted && Boolean(s.sales?.date) && (s.sales?.date || '') <= asOfDate)
-            .reduce((sum, s) => sum + Number(s.qty || 0), 0);
-
-        const transferredIn = transfers
-            .filter(t => t.to_city === branch && t.date <= asOfDate && transferActiveAsOf(t, asOfDate))
-            .flatMap(t => t.items || [])
-            .filter(i => i.product_name === productName)
-            .reduce((sum, i) => sum + Number(i.qty || 0), 0);
-
-        const transferredOut = transfers
-            .filter(t => t.from_city === branch && t.date <= asOfDate && transferActiveAsOf(t, asOfDate))
-            .flatMap(t => t.items || [])
-            .filter(i => i.product_name === productName)
-            .reduce((sum, i) => sum + Number(i.qty || 0), 0);
-
-        return Math.max(0, opening + restocked - sold + transferredIn - transferredOut);
-    };
-
     const handleSave = async () => {
         if (!fromCity || !toCity || fromCity === toCity) {
             showError('Invalid transfer', 'Select two different branches.');
@@ -150,7 +117,7 @@ export default function TransfersPage() {
         const requestedByProduct = buildRequestedByProduct();
         const insuff: InsufficientDetail[] = [];
         for (const [product_name, requested] of Array.from(requestedByProduct.entries())) {
-            const available = computeAvailableAsOf(product_name, fromCity, date);
+            const available = getBranchAvailableAsOf(sales, restocks, transfers, product_name, fromCity, date);
             if (requested > available) {
                 insuff.push({ product_name, requested, available });
             }
@@ -257,6 +224,8 @@ export default function TransfersPage() {
         next.splice(idx, 1);
         setLineItems(next.length ? next : [{ id: Math.random().toString(), product_name: '', qty: 1 }]);
     };
+
+    const visibleTransfers = showUndone ? transfers : transfers.filter(t => !t.is_undone);
 
     if (authLoading) {
         return (
@@ -378,7 +347,34 @@ export default function TransfersPage() {
             )}
 
             <div className="card">
-                <div className="card-title">Transfer history</div>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '10px'
+                    }}
+                >
+                    <div className="card-title" style={{ marginBottom: 0 }}>Transfer history</div>
+                    <label
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                            color: 'var(--text2)',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={showUndone}
+                            onChange={e => setShowUndone(e.target.checked)}
+                            style={{ width: '13px', height: '13px' }}
+                        />
+                        Show undone
+                    </label>
+                </div>
                 <div className="tbl-wrap">
                     <table>
                         <thead>
@@ -394,7 +390,7 @@ export default function TransfersPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {transfers.map(t => {
+                            {visibleTransfers.map(t => {
                                 const items = t.items || [];
                                 const summary = items.map(i => `${i.product_name}×${i.qty}`).join('; ') || '—';
                                 const undone = Boolean(t.is_undone);
@@ -426,10 +422,10 @@ export default function TransfersPage() {
                                     </tr>
                                 );
                             })}
-                            {transfers.length === 0 && (
+                            {visibleTransfers.length === 0 && (
                                 <tr>
                                     <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text3)', padding: '28px' }}>
-                                        No transfers yet
+                                        {showUndone ? 'No transfers yet' : 'No active transfers'}
                                     </td>
                                 </tr>
                             )}
