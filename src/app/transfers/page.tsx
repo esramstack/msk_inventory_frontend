@@ -8,18 +8,12 @@ import { getTransfers, addTransfer, undoTransfer } from '@/api/transfers';
 import { getSales, getRestocks, SaleLineRow } from '@/api/sales';
 import { addActivityLog } from '@/api/quotes';
 import { Product, Restock, StockTransfer } from '@/lib/types';
+import { getBranchAvailableAsOf } from '@/lib/stockUtils';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 type LineItem = { id: string; product_name: string; qty: number };
 type InsufficientDetail = { product_name: string; requested: number; available: number };
-
-const dateOnly = (v: string) => new Date(v).toISOString().split('T')[0];
-const transferActiveAsOf = (t: StockTransfer, asOfDate: string) => {
-    if (!t.is_undone) return true;
-    if (!t.undone_at) return true;
-    return dateOnly(t.undone_at) > asOfDate;
-};
 
 export default function TransfersPage() {
     const { user, loading: authLoading } = useAuth();
@@ -105,34 +99,6 @@ export default function TransfersPage() {
         return map;
     };
 
-    const computeAvailableAsOf = (productName: string, branch: string, asOfDate: string) => {
-        const opening = restocks
-            .filter(r => r.city === branch && r.product_name === productName && r.supplier === 'Initial Stock' && r.date <= asOfDate)
-            .reduce((sum, r) => sum + Number(r.qty || 0), 0);
-
-        const restocked = restocks
-            .filter(r => r.city === branch && r.product_name === productName && r.supplier !== 'Initial Stock' && r.date <= asOfDate)
-            .reduce((sum, r) => sum + Number(r.qty || 0), 0);
-
-        const sold = sales
-            .filter(s => s.product_name === productName && s.sales?.city === branch && !s.sales?.is_deleted && Boolean(s.sales?.date) && (s.sales?.date || '') <= asOfDate)
-            .reduce((sum, s) => sum + Number(s.qty || 0), 0);
-
-        const transferredIn = transfers
-            .filter(t => t.to_city === branch && t.date <= asOfDate && transferActiveAsOf(t, asOfDate))
-            .flatMap(t => t.items || [])
-            .filter(i => i.product_name === productName)
-            .reduce((sum, i) => sum + Number(i.qty || 0), 0);
-
-        const transferredOut = transfers
-            .filter(t => t.from_city === branch && t.date <= asOfDate && transferActiveAsOf(t, asOfDate))
-            .flatMap(t => t.items || [])
-            .filter(i => i.product_name === productName)
-            .reduce((sum, i) => sum + Number(i.qty || 0), 0);
-
-        return Math.max(0, opening + restocked - sold + transferredIn - transferredOut);
-    };
-
     const handleSave = async () => {
         if (!fromCity || !toCity || fromCity === toCity) {
             showError('Invalid transfer', 'Select two different branches.');
@@ -150,7 +116,7 @@ export default function TransfersPage() {
         const requestedByProduct = buildRequestedByProduct();
         const insuff: InsufficientDetail[] = [];
         for (const [product_name, requested] of Array.from(requestedByProduct.entries())) {
-            const available = computeAvailableAsOf(product_name, fromCity, date);
+            const available = getBranchAvailableAsOf(sales, restocks, transfers, product_name, fromCity, date);
             if (requested > available) {
                 insuff.push({ product_name, requested, available });
             }

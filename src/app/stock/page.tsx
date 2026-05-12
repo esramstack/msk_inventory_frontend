@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { getProducts } from '@/api/inventory';
-import { getSales, getRestocks, SaleLineRow } from '@/api/sales';
+import { getSales, getRestocks } from '@/api/sales';
 import { getTransfers } from '@/api/transfers';
-import { Product, Restock, StockTransfer } from '@/lib/types';
+import { buildBranchStockMap, normalizeKey } from '@/lib/stockUtils';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface StockRow {
@@ -29,12 +29,12 @@ interface BranchProductRow {
 
 interface BranchData {
     branch: string;
+    branchKey: string;
     products: BranchProductRow[];
     totalCurrent: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const pkr = (v: number) => 'PKR ' + Number(v || 0).toLocaleString();
 const CITY_COLORS = ['var(--blue)', 'var(--green)', 'var(--gold)', 'var(--amber)', 'var(--red)'];
 
 const barColor = (pct: number) => {
@@ -53,8 +53,6 @@ const StockBadge = ({ cur, reorder }: { cur: number; reorder: number }) => {
 export default function StockLevels() {
     const [stockRows, setStockRows] = useState<StockRow[]>([]);
     const [branchData, setBranchData] = useState<BranchData[]>([]);
-    const [sales, setSales] = useState<SaleLineRow[]>([]);
-    const [restocks, setRestocks] = useState<Restock[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'overview' | 'branch'>('overview');
 
@@ -65,31 +63,67 @@ export default function StockLevels() {
                     getProducts(), getSales(), getRestocks(), getTransfers()
                 ]);
 
-                setSales(salesData);
-                setRestocks(restockData);
+                const { branchCards, sumCurrentByProductKey } = buildBranchStockMap(
+                    salesData,
+                    restockData,
+                    transferData,
+                    products
+                );
 
-                // ── Overview rows ─────────────────────────────────────
+                const branchUi: BranchData[] = branchCards.map(c => ({
+                    branch: c.branchLabel,
+                    branchKey: c.branchKey,
+                    totalCurrent: c.totalCurrent,
+                    products: c.products.map(p => ({
+                        product: p.productLabel,
+                        restocked: p.restocked,
+                        sold: p.sold,
+                        current: p.current,
+                        healthPct: p.healthPct
+                    }))
+                }));
+                setBranchData(branchUi);
+
                 const startDate = new Date('2025-06-01');
-                const daysSince = Math.max(1, Math.round((new Date().getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+                const daysSince = Math.max(
+                    1,
+                    Math.round((new Date().getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+                );
 
                 const rows: StockRow[] = products.map(p => {
-                    const sold = salesData.filter(r => r.product_name === p.name).reduce((sum, r) => sum + r.qty, 0);
-                    const allRestocked = restockData.filter(r => r.product_name === p.name).reduce((sum, r) => sum + r.qty, 0);
-                    const initialEntry = restockData.find(r => r.product_name === p.name && r.supplier === 'Initial Stock');
+                    const pk = normalizeKey(p.name);
+                    // Match sales log baseline: count only rows that have a visible sale header.
+                    const sold = salesData
+                        .filter(r => r.sales != null && normalizeKey(r.product_name) === pk)
+                        .reduce((sum, r) => sum + r.qty, 0);
+                    const allRestocked = restockData
+                        .filter(r => normalizeKey(r.product_name) === pk)
+                        .reduce((sum, r) => sum + r.qty, 0);
+                    const initialEntry = restockData.find(
+                        r => normalizeKey(r.product_name) === pk && r.supplier === 'Initial Stock'
+                    );
                     const opening = initialEntry ? initialEntry.qty : 0;
                     const restocked = allRestocked - opening;
                     const total = opening + restocked;
-                    const current = total - sold;
+                    const current = sumCurrentByProductKey.get(pk) ?? 0;
                     const healthPct = total > 0 ? Math.max(0, current / total) : 0;
                     const avgDaily = sold / daysSince;
-                    const daysLeft: number | '∞' = avgDaily > 0 ? Math.round(current / avgDaily) : '∞';
-                    return { product: p.name, opening, restocked, total, sold, current, reorder: p.reorder_level, healthPct, daysLeft };
+                    const daysLeft: number | '∞' =
+                        avgDaily > 0 ? Math.round(current / avgDaily) : '∞';
+                    return {
+                        product: p.name,
+                        opening,
+                        restocked,
+                        total,
+                        sold,
+                        current,
+                        reorder: p.reorder_level,
+                        healthPct,
+                        daysLeft
+                    };
                 });
 
                 setStockRows(rows);
-
-                // ── Branch breakdown ───────────────────────────────────
-                buildBranchData(salesData, restockData, transferData);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -98,74 +132,6 @@ export default function StockLevels() {
         }
         loadData();
     }, []);
-
-    function buildBranchData(salesData: SaleLineRow[], restockData: Restock[], transferData: StockTransfer[]) {
-        // Branch names from sales, restocks, or transfers (so transfer-only branches appear)
-        const transferCities = transferData.flatMap(t => [t.from_city, t.to_city]).filter(Boolean);
-        const branchNames = Array.from(
-            new Set(
-                [
-                    ...salesData.map(r => r.sales?.city).filter(Boolean),
-                    ...restockData.map(r => r.city).filter(Boolean),
-                    ...transferCities,
-                ] as string[]
-            )
-        );
-
-        const data: BranchData[] = branchNames.map(name => {
-            const branchSales = salesData.filter(r => r.sales?.city === name);
-            const branchRestocks = restockData.filter(r => r.city === name);
-
-            // All products that ever moved in this branch
-            const productNames = Array.from(
-                new Set([
-                    ...branchSales.map(r => r.product_name),
-                    ...branchRestocks.map(r => r.product_name),
-                ])
-            );
-
-            const products: BranchProductRow[] = productNames.map(prod => {
-                const prodSales = branchSales
-                    .filter(r => r.product_name === prod);
-                const prodRestocks = branchRestocks
-                    .filter(r => r.product_name === prod);
-
-                const sold = prodSales.reduce((a, s) => a + s.qty, 0);
-                const allRestocked = prodRestocks.reduce((a, r) => a + r.qty, 0);
-
-                // Treat any branch-level "Initial Stock" as opening stock for that branch
-                const initialEntry = prodRestocks.find(r => r.supplier === 'Initial Stock');
-                const opening = initialEntry ? initialEntry.qty : 0;
-
-                // "Restocked" here follows the overview semantics = movements after opening
-                const restocked = allRestocked - opening;
-
-                const transferredIn = transferData
-                    .filter(t => !t.is_undone && t.to_city === name)
-                    .flatMap(t => t.items ?? [])
-                    .filter(i => i.product_name === prod)
-                    .reduce((a, i) => a + i.qty, 0);
-
-                const transferredOut = transferData
-                    .filter(t => !t.is_undone && t.from_city === name)
-                    .flatMap(t => t.items ?? [])
-                    .filter(i => i.product_name === prod)
-                    .reduce((a, i) => a + i.qty, 0);
-
-                const current = opening + restocked - sold + transferredIn - transferredOut;
-                const total = opening + restocked;
-
-                const healthPct = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
-                return { product: prod, restocked, sold, current, healthPct };
-            }).filter(p => p.restocked > 0 || p.sold > 0 || p.current > 0);
-
-            const totalCurrent = products.reduce((a, p) => a + p.current, 0);
-
-            return { branch: name, products, totalCurrent };
-        }).sort((a, b) => b.totalCurrent - a.totalCurrent);
-
-        setBranchData(data);
-    }
 
     if (loading) return (
         <div className="page active">
@@ -182,7 +148,6 @@ export default function StockLevels() {
                 </div>
             </div>
 
-            {/* ── TABS ── */}
             <div className="stock-tabs">
                 <button
                     className={`stock-tab${activeTab === 'overview' ? ' active' : ''}`}
@@ -200,7 +165,6 @@ export default function StockLevels() {
                 </button>
             </div>
 
-            {/* ── OVERVIEW TAB ── */}
             {activeTab === 'overview' && (
                 <div id="stock-tab-overview">
                     <div className="card">
@@ -216,7 +180,6 @@ export default function StockLevels() {
                                         <th>Current</th>
                                         <th>Reorder At</th>
                                         <th style={{ minWidth: '100px' }}>Stock %</th>
-                                        {/* <th>Est. Days Left</th> */}
                                         <th>Status</th>
                                     </tr>
                                 </thead>
@@ -248,7 +211,6 @@ export default function StockLevels() {
                                                     </span>
                                                 </div>
                                             </td>
-                                            {/* <td className="mono">{r.daysLeft}</td> */}
                                             <td><StockBadge cur={r.current} reorder={r.reorder} /></td>
                                         </tr>
                                     ))}
@@ -262,17 +224,15 @@ export default function StockLevels() {
                 </div>
             )}
 
-            {/* ── BRANCH TAB ── */}
             {activeTab === 'branch' && (
                 <div id="stock-tab-branch">
-                    {/* Branch Inventory Grid */}
                     <div className="card">
                         <div className="card-title">Current Inventory by Branch</div>
                         <div className="branch-stock-grid" id="branch-stock-grid">
                             {branchData.map((d, ci) => {
                                 const color = CITY_COLORS[ci % CITY_COLORS.length];
                                 return (
-                                    <div className="branch-stock-card" key={d.branch}>
+                                    <div className="branch-stock-card" key={d.branchKey}>
                                         <div className="branch-name">
                                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
                                             {d.branch}
@@ -280,7 +240,6 @@ export default function StockLevels() {
                                                 {d.totalCurrent} units in stock
                                             </span>
                                         </div>
-                                        {/* Updated 4-column Header */}
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 100px', gap: '4px 8px', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid var(--border)' }}>
                                             <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Product</span>
                                             <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'right' }}>Restocked</span>
@@ -290,31 +249,27 @@ export default function StockLevels() {
                                         {d.products.length === 0 ? (
                                             <div style={{ color: 'var(--text3)', fontSize: '12px' }}>No inventory movements yet</div>
                                         ) : d.products.map(b => (
-                                            <div 
-                                                className="branch-prod-row" 
-                                                key={b.product}
-                                                style={{ 
-                                                    display: 'grid', 
-                                                    gridTemplateColumns: '1fr 80px 80px 100px', 
-                                                    gap: '4px 8px', 
+                                            <div
+                                                className="branch-prod-row"
+                                                key={`${d.branchKey}:${normalizeKey(b.product)}`}
+                                                style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: '1fr 80px 80px 100px',
+                                                    gap: '4px 8px',
                                                     alignItems: 'center',
                                                     marginBottom: '12px'
                                                 }}
                                             >
-                                                {/* Col 1: Product Name */}
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     <div style={{ width: '3px', height: '14px', borderRadius: '2px', background: color, flexShrink: 0 }} />
                                                     <div className="branch-prod-name">{b.product}</div>
                                                 </div>
-                                                {/* Col 2: Restocked */}
                                                 <div className="branch-prod-qty" style={{ textAlign: 'right', fontWeight: 600 }}>
                                                     {b.restocked}
                                                 </div>
-                                                {/* Col 3: Current */}
                                                 <div className="branch-prod-current" style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: '13px' }}>
                                                     {b.current}
                                                 </div>
-                                                {/* Col 4: Status */}
                                                 <div className="branch-prod-status" style={{ textAlign: 'right' }}>
                                                     <span
                                                         style={{
