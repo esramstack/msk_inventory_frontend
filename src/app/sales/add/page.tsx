@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getProducts, getConfigLists } from '@/api/inventory';
 import { addSale, getSales, getRestocks, CreateSalePayload, SaleLineRow } from '@/api/sales';
+import { getTransfers } from '@/api/transfers';
 import { addActivityLog } from '@/api/quotes';
-import { Product, ConfigList, Restock } from '@/lib/types';
+import { Product, ConfigList, Restock, StockTransfer } from '@/lib/types';
+import { getBranchAvailableAsOf } from '@/lib/stockUtils';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
@@ -18,6 +20,7 @@ export default function AddSale() {
     const [loading, setLoading] = useState(true);
     const [sales, setSales] = useState<SaleLineRow[]>([]);
     const [restocks, setRestocks] = useState<Restock[]>([]);
+    const [transfers, setTransfers] = useState<StockTransfer[]>([]);
     const [errorOpen, setErrorOpen] = useState(false);
     const [errorTitle, setErrorTitle] = useState('');
     const [errorMessage, setErrorMessage] = useState<React.ReactNode>('');
@@ -68,16 +71,18 @@ export default function AddSale() {
     useEffect(() => {
         async function load() {
             try {
-                const [p, c, s, r] = await Promise.all([
+                const [p, c, s, r, t] = await Promise.all([
                     getProducts(),
                     getConfigLists(),
                     getSales(),
-                    getRestocks()
+                    getRestocks(),
+                    getTransfers()
                 ]);
                 setProducts(p);
                 setConfigs(c);
                 setSales(s);
                 setRestocks(r);
+                setTransfers(t);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -137,41 +142,6 @@ export default function AddSale() {
 
     const { subtotal, overallDiscAmt, overallFinal } = calcTotals();
 
-    const getBranchAvailable = (prodName: string, branchName: string) => {
-        if (!prodName || !branchName) return 0;
-
-        const prodSales = sales.filter(
-            r => r.product_name === prodName && r.sales?.city === branchName
-        );
-        const prodRestocks = restocks.filter(
-            r => r.product_name === prodName && r.city === branchName
-        );
-
-        const sold = prodSales.reduce((a, s) => a + s.qty, 0);
-        const allRestocked = prodRestocks.reduce((a, r) => a + r.qty, 0);
-
-        const initialEntry = prodRestocks.find(r => r.supplier === 'Initial Stock');
-        const opening = initialEntry ? initialEntry.qty : 0;
-
-        const restocked = allRestocked - opening;
-        const current = opening + restocked - sold;
-
-        return Math.max(0, current);
-    };
-
-    const getGlobalAvailable = (prodName: string) => {
-        if (!prodName) return 0;
-
-        const prodSales = sales.filter(r => r.product_name === prodName);
-        const prodRestocks = restocks.filter(r => r.product_name === prodName);
-
-        const sold = prodSales.reduce((a, s) => a + s.qty, 0);
-        const allRestocked = prodRestocks.reduce((a, r) => a + r.qty, 0);
-
-        const current = allRestocked - sold;
-        return Math.max(0, current);
-    };
-
     const showError = (title: string, message: React.ReactNode) => {
         setErrorTitle(title);
         setErrorMessage(message);
@@ -225,21 +195,27 @@ export default function AddSale() {
 
         items.forEach(it => {
             if (!it.productName) return;
-            const branchAvailable = getBranchAvailable(it.productName, branch);
-            const globalAvailable = getGlobalAvailable(it.productName);
-
-            if (globalAvailable <= 0) {
-                stockErrors.push(`No stock available for ${it.productName}. Please restock before recording a sale.`);
-                return;
-            }
+            // Match Stock Levels / Transfers: opening + restocks − sales + transfers in − out, as-of sale date.
+            const branchAvailable = getBranchAvailableAsOf(
+                sales,
+                restocks,
+                transfers,
+                it.productName,
+                branch,
+                date
+            );
 
             if (branchAvailable <= 0) {
-                stockErrors.push(`No stock available for ${it.productName} at ${branch}. Please select another branch or restock this branch.`);
+                stockErrors.push(
+                    `No stock available for ${it.productName} at ${branch} (as of ${date}). Please select another branch, adjust the date, or restock.`
+                );
                 return;
             }
 
             if (it.qty > branchAvailable) {
-                stockErrors.push(`Only ${branchAvailable} unit(s) available for ${it.productName} at ${branch}. Please reduce the quantity.`);
+                stockErrors.push(
+                    `Only ${branchAvailable} unit(s) available for ${it.productName} at ${branch} (as of ${date}). Please reduce the quantity.`
+                );
             }
         });
 
