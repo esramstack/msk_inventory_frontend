@@ -7,6 +7,48 @@ import { Sale } from '@/lib/types';
 import { useAuth } from '@/components/AuthProvider';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
+const PAGE_SIZE = 50;
+
+function buildPages(
+    refs: string[],
+    groups: Record<string, (SaleLineRow & { sales: Sale })[]>,
+    pageSize: number
+): string[][] {
+    const pages: string[][] = [];
+    let current: string[] = [];
+    let lineCount = 0;
+
+    for (const ref of refs) {
+        const size = groups[ref].length;
+        if (current.length > 0 && lineCount + size > pageSize) {
+            pages.push(current);
+            current = [];
+            lineCount = 0;
+        }
+        current.push(ref);
+        lineCount += size;
+    }
+    if (current.length > 0) pages.push(current);
+    return pages;
+}
+
+function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+    if (total <= 7) {
+        return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    const pages = new Set<number>([1, total]);
+    for (let p = current - 1; p <= current + 1; p++) {
+        if (p >= 1 && p <= total) pages.add(p);
+    }
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const result: (number | 'ellipsis')[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+        if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push('ellipsis');
+        result.push(sorted[i]);
+    }
+    return result;
+}
+
 export default function SalesLog() {
     const { user } = useAuth();
     const [rows, setRows] = useState<SaleLineRow[]>([]);
@@ -24,6 +66,7 @@ export default function SalesLog() {
     const [toDate, setToDate] = useState('');
     const [pendingDelete, setPendingDelete] = useState<Sale | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
 
     const loadData = async () => {
         try {
@@ -39,6 +82,10 @@ export default function SalesLog() {
     useEffect(() => {
         loadData();
     }, []);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter, branchFilter, productFilter, paymentFilter, datePreset, fromDate, toDate]);
 
     const isAdmin = user?.role === 'admin';
 
@@ -121,6 +168,7 @@ export default function SalesLog() {
 
     // Sum of all displayed line-item final prices after filters are applied.
     const grandTotal = filteredRows.reduce((sum, r) => sum + (r.final_price || 0), 0);
+    const totalQty = filteredRows.reduce((sum, r) => sum + (r.qty || 0), 0);
 
     const branchOptions = Array.from(new Set(rowsWithSales.map(r => r.sales.city).filter(Boolean))) as string[];
     const productOptions = Array.from(new Set(rowsWithSales.map(r => r.product_name).filter(Boolean))) as string[];
@@ -140,6 +188,19 @@ export default function SalesLog() {
         // Descending: newer first
         return bDate.localeCompare(aDate);
     });
+
+    const pages = buildPages(orderedRefs, groupedByRef, PAGE_SIZE);
+    const totalPages = Math.max(1, pages.length);
+    const safePage = Math.min(currentPage, totalPages);
+    const paginatedRefs = pages[safePage - 1] ?? [];
+    const totalLineItems = filteredRows.length;
+    const pageLineItems = paginatedRefs.reduce((n, ref) => n + groupedByRef[ref].length, 0);
+    const linesBeforePage = pages.slice(0, safePage - 1).reduce(
+        (n, page) => n + page.reduce((sum, ref) => sum + groupedByRef[ref].length, 0),
+        0
+    );
+    const rangeStart = totalLineItems === 0 ? 0 : linesBeforePage + 1;
+    const rangeEnd = totalLineItems === 0 ? 0 : linesBeforePage + pageLineItems;
 
     const pkr = (v: number) => 'PKR ' + Number(Math.round(v)).toLocaleString();
     const statusBadge = (s: string) => {
@@ -286,22 +347,35 @@ export default function SalesLog() {
 
                 <div style={{
                     display: 'flex',
-                    justifyContent: 'flex-end',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     gap: 10,
                     padding: '10px 0 12px',
                     borderBottom: '1px solid var(--border)',
                     marginBottom: 12
                 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>Total (Final Price)</span>
-                    <span style={{
-                        fontWeight: 800,
-                        color: 'var(--gold)',
-                        fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace",
-                        fontSize: 16
-                    }}>
-                        {pkr(grandTotal)}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>Total Qty</span>
+                        <span style={{
+                            fontWeight: 800,
+                            color: 'var(--gold)',
+                            fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace",
+                            fontSize: 16
+                        }}>
+                            {totalQty.toLocaleString()}
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>Total (Final Price)</span>
+                        <span style={{
+                            fontWeight: 800,
+                            color: 'var(--gold)',
+                            fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace",
+                            fontSize: 16
+                        }}>
+                            {pkr(grandTotal)}
+                        </span>
+                    </div>
                 </div>
 
                 <div className="tbl-wrap" id="sales-tbl-wrap">
@@ -325,7 +399,7 @@ export default function SalesLog() {
                             </tr>
                         </thead>
                         <tbody>
-                            {orderedRefs.map(ref => {
+                            {paginatedRefs.map(ref => {
                                 const group = groupedByRef[ref];
                                 const first = group[0];
                                 const groupTotal = group.reduce((sum, r) => sum + r.final_price, 0);
@@ -383,6 +457,81 @@ export default function SalesLog() {
                         </tbody>
                     </table>
                 </div>
+
+                {totalLineItems > 0 && (
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                        marginTop: 12,
+                        paddingTop: 12,
+                        borderTop: '1px solid var(--border)'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 8
+                        }}>
+                            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                                Showing {rangeStart}–{rangeEnd} of {totalLineItems.toLocaleString()} lines
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    disabled={safePage <= 1}
+                                    onClick={() => setCurrentPage(p => p - 1)}
+                                >
+                                    Previous
+                                </button>
+                                <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                                    Page {safePage} of {totalPages}
+                                </span>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    disabled={safePage >= totalPages}
+                                    onClick={() => setCurrentPage(p => p + 1)}
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                        {totalPages > 1 && (
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                gap: 4,
+                                flexWrap: 'wrap'
+                            }}>
+                                {getPageNumbers(safePage, totalPages).map((item, idx) =>
+                                    item === 'ellipsis' ? (
+                                        <span
+                                            key={`ellipsis-${idx}`}
+                                            style={{ fontSize: 12, color: 'var(--text3)', padding: '0 4px' }}
+                                        >
+                                            …
+                                        </span>
+                                    ) : (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            className={`btn btn-sm ${item === safePage ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => setCurrentPage(item)}
+                                            disabled={item === safePage}
+                                            aria-current={item === safePage ? 'page' : undefined}
+                                        >
+                                            {item}
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <ConfirmDialog
